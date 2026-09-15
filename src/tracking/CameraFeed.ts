@@ -175,18 +175,24 @@ export class CameraFeed {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
         }
 
-        // Desenha o esqueleto brilhante da IA
+        // ── ESQUELETO PROFISSIONAL DE BIOMECÂNICA OLÍMPICA ──
         if (landmarks && landmarks.length >= 17) {
             ctx.save();
 
-            // ── Linhas dos ossos (Glow Neon) ──
-            const lineColor = isJumping ? '#00ff88' : '#00e5ff';
-            ctx.strokeStyle = lineColor;
-            ctx.lineWidth = Math.max(3, Math.round(w * 0.022));
-            ctx.shadowColor = lineColor;
-            ctx.shadowBlur = 14;
+            const isEmerald = isJumping;
+            const primaryColor = isEmerald ? '#00ff88' : '#00f0ff';
+            const coreColor = '#ffffff';
+            const boneThickness = Math.max(3.5, Math.round(w * 0.024));
+
+            // 1. LINHAS DOS OSSOS — Camada Dupla: Laser Core Branco + Brilho Neon Holográfico
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
+
+            // Passada 1: Brilho Neon Externo
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = boneThickness;
+            ctx.shadowColor = primaryColor;
+            ctx.shadowBlur = 16;
 
             for (const [i1, i2] of POSE_CONNECTIONS) {
                 const p1 = landmarks[i1];
@@ -201,68 +207,149 @@ export class CameraFeed {
                 }
             }
 
-            // ── Linha da espinha (centro dos ombros → centro do quadril) ──
+            // Linha da espinha (coluna vertebral biomecânica)
             const ls = landmarks[11], rs = landmarks[12];
             const lh = landmarks[23], rh = landmarks[24];
-            if (ls && rs && lh && rh &&
+            let spineMidTopX = 0, spineMidTopY = 0, spineMidBotX = 0, spineMidBotY = 0;
+            const hasSpine = ls && rs && lh && rh &&
                 (ls.visibility ?? 1) > 0.25 && (rs.visibility ?? 1) > 0.25 &&
-                (lh.visibility ?? 1) > 0.20 && (rh.visibility ?? 1) > 0.20) {
-                const midShoulderX = (ls.x + rs.x) / 2;
-                const midShoulderY = (ls.y + rs.y) / 2;
-                const midHipX = (lh.x + rh.x) / 2;
-                const midHipY = (lh.y + rh.y) / 2;
+                (lh.visibility ?? 1) > 0.20 && (rh.visibility ?? 1) > 0.20;
+
+            if (hasSpine) {
+                spineMidTopX = (ls.x + rs.x) / 2;
+                spineMidTopY = (ls.y + rs.y) / 2;
+                spineMidBotX = (lh.x + rh.x) / 2;
+                spineMidBotY = (lh.y + rh.y) / 2;
+
                 ctx.beginPath();
-                ctx.moveTo(midShoulderX * w, midShoulderY * h);
-                ctx.lineTo(midHipX * w, midHipY * h);
+                ctx.moveTo(spineMidTopX * w, spineMidTopY * h);
+                ctx.lineTo(spineMidBotX * w, spineMidBotY * h);
                 ctx.stroke();
             }
 
-            // ── Pontos das articulações (Dourado neon) ──
-            const jointRadius = Math.max(3, Math.round(w * 0.025));
-            ctx.fillStyle = '#ffd700';
-            ctx.shadowColor = '#ffd700';
-            ctx.shadowBlur = 8;
+            // Passada 2: Núcleo Laser Branco Central (Aspecto High-Tech Profissional)
+            ctx.strokeStyle = coreColor;
+            ctx.lineWidth = Math.max(1.5, Math.round(boneThickness * 0.35));
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = coreColor;
 
-            for (let i = 11; i < Math.min(landmarks.length, 29); i++) {
+            for (const [i1, i2] of POSE_CONNECTIONS) {
+                const p1 = landmarks[i1];
+                const p2 = landmarks[i2];
+                if (!p1 || !p2) continue;
+                if ((p1.visibility ?? 1) > 0.25 && (p2.visibility ?? 1) > 0.25) {
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x * w, p1.y * h);
+                    ctx.lineTo(p2.x * w, p2.y * h);
+                    ctx.stroke();
+                }
+            }
+            if (hasSpine) {
+                ctx.beginPath();
+                ctx.moveTo(spineMidTopX * w, spineMidTopY * h);
+                ctx.lineTo(spineMidBotX * w, spineMidBotY * h);
+                ctx.stroke();
+            }
+
+            // 2. ARTICULAÇÕES BIOMÉTRICAS (Anéis Concêntricos Radar + Núcleo Dourado)
+            const jointRadius = Math.max(4, Math.round(w * 0.024));
+            for (let i = 11; i < Math.min(landmarks.length, 33); i++) {
                 const lm = landmarks[i];
                 if (!lm || (lm.visibility ?? 1) <= 0.25) continue;
 
                 const cx = lm.x * w;
                 const cy = lm.y * h;
-                ctx.beginPath();
-                ctx.arc(cx, cy, jointRadius, 0, 2 * Math.PI);
-                ctx.fill();
-            }
 
-            // ── Cabeça (círculo neon ao redor da face) ──
-            const nose = landmarks[0];
-            const headRadius = Math.max(12, Math.round(w * 0.085));
-            if (nose && (nose.visibility ?? 1) > 0.25) {
-                // Círculo da cabeça
-                ctx.strokeStyle = lineColor;
-                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
-                ctx.shadowColor = lineColor;
-                ctx.shadowBlur = 12;
+                // Anel externo radar
+                ctx.strokeStyle = primaryColor;
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = primaryColor;
+                ctx.shadowBlur = 6;
                 ctx.beginPath();
-                ctx.arc(nose.x * w, nose.y * h, headRadius, 0, 2 * Math.PI);
+                ctx.arc(cx, cy, jointRadius * 1.5, 0, 2 * Math.PI);
                 ctx.stroke();
 
-                // Ponto central
-                ctx.fillStyle = '#ff3366';
-                ctx.shadowColor = '#ff3366';
+                // Núcleo interno neon (Dourado de Campeão Olímpico)
+                ctx.fillStyle = '#ffdf00';
+                ctx.shadowColor = '#ffdf00';
                 ctx.shadowBlur = 8;
                 ctx.beginPath();
-                ctx.arc(nose.x * w, nose.y * h, Math.max(3, headRadius * 0.25), 0, 2 * Math.PI);
+                ctx.arc(cx, cy, jointRadius * 0.7, 0, 2 * Math.PI);
                 ctx.fill();
 
-                // Conexão pescoço (base da cabeça → centro dos ombros)
-                if (ls && rs && (ls.visibility ?? 1) > 0.25 && (rs.visibility ?? 1) > 0.25) {
-                    const neckX = (ls.x + rs.x) / 2;
-                    const neckY = (ls.y + rs.y) / 2;
-                    ctx.strokeStyle = lineColor;
+                // Destaque para pulsos e joelhos
+                if (i === 15 || i === 16 || i === 25 || i === 26) {
+                    ctx.fillStyle = '#ffffff';
                     ctx.beginPath();
-                    ctx.moveTo(nose.x * w, nose.y * h + headRadius);
-                    ctx.lineTo(neckX * w, neckY * h);
+                    ctx.arc(cx, cy, jointRadius * 0.35, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            // 3. RETÍCULO HUD DA CABEÇA (Brackets Angulares de Mira Profissional)
+            const nose = landmarks[0];
+            const headR = Math.max(14, Math.round(w * 0.09));
+            if (nose && (nose.visibility ?? 1) > 0.25) {
+                const nx = nose.x * w;
+                const ny = nose.y * h;
+
+                // Brackets angulares estilo mira biométrica [ ]
+                const bSize = headR * 1.15;
+                const bLen = headR * 0.45;
+                ctx.strokeStyle = primaryColor;
+                ctx.lineWidth = 2;
+                ctx.shadowColor = primaryColor;
+                ctx.shadowBlur = 10;
+
+                // Top-Left
+                ctx.beginPath();
+                ctx.moveTo(nx - bSize, ny - bSize + bLen);
+                ctx.lineTo(nx - bSize, ny - bSize);
+                ctx.lineTo(nx - bSize + bLen, ny - bSize);
+                ctx.stroke();
+
+                // Top-Right
+                ctx.beginPath();
+                ctx.moveTo(nx + bSize - bLen, ny - bSize);
+                ctx.lineTo(nx + bSize, ny - bSize);
+                ctx.lineTo(nx + bSize, ny - bSize + bLen);
+                ctx.stroke();
+
+                // Bottom-Left
+                ctx.beginPath();
+                ctx.moveTo(nx - bSize, ny + bSize - bLen);
+                ctx.lineTo(nx - bSize, ny + bSize);
+                ctx.lineTo(nx - bSize + bLen, ny + bSize);
+                ctx.stroke();
+
+                // Bottom-Right
+                ctx.beginPath();
+                ctx.moveTo(nx + bSize - bLen, ny + bSize);
+                ctx.lineTo(nx + bSize, ny + bSize);
+                ctx.lineTo(nx + bSize, ny + bSize - bLen);
+                ctx.stroke();
+
+                // Mira central
+                ctx.fillStyle = isEmerald ? '#00ff88' : '#ff0055';
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(nx, ny, 3.5, 0, 2 * Math.PI);
+                ctx.fill();
+
+                // Tag de telemetria
+                ctx.font = 'bold 9px monospace';
+                ctx.fillStyle = primaryColor;
+                ctx.textAlign = 'center';
+                ctx.fillText('AI RUNNER #26', nx, ny - bSize - 4);
+
+                // Conexão do pescoço com a coluna
+                if (hasSpine) {
+                    ctx.strokeStyle = primaryColor;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(nx, ny + headR * 0.8);
+                    ctx.lineTo(spineMidTopX * w, spineMidTopY * h);
                     ctx.stroke();
                 }
             }

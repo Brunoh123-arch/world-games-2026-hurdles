@@ -187,8 +187,7 @@ export class AvatarAnimator {
             parts.head.rotation.y = this.smooth('headY', clampedHeadYaw);
         }
 
-        // ── BRAÇO NA ESQUERDA DA TELA (controlado pelo BRAÇO ESQUERDO do jogador — Espelho Natural) ──
-        // Visto de trás pelo ângulo da câmera (+Z), o membro parts.rightUpperArm (X = +0.31) fica na ESQUERDA da tela!
+        // ── BRAÇO ESQUERDO DO JOGADOR → BRAÇO ESQUERDO DO BONECO (lado esquerdo da tela) ──
         const le = pt(LM.L_ELBOW), lw = pt(LM.L_WRIST);
         if (ls && le && vis(LM.L_SHOULDER) > 0.25 && vis(LM.L_ELBOW) > 0.25) {
             const lWristVis = lw && vis(LM.L_WRIST) > 0.25;
@@ -197,27 +196,25 @@ export class AvatarAnimator {
 
             const rawArmElevationX = -elevation * 4.0;
             const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
-            // Abrir braço esquerdo para fora (para a esquerda da tela = rotação Z positiva em parts.rightUpperArm)
             const spreadDistance = Math.abs((lWristVis ? lw.x : le.x) - ls.x);
             const clampedArmSpreadZ = THREE.MathUtils.clamp(spreadDistance * 3.0, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
-            parts.rightUpperArm.rotation.x = this.smooth('screenLeftArmX', clampedArmElevationX);
-            parts.rightUpperArm.rotation.z = this.smooth('screenLeftArmZ', clampedArmSpreadZ);
+            parts.leftUpperArm.rotation.x = this.smooth('screenLeftArmX', clampedArmElevationX);
+            parts.leftUpperArm.rotation.z = this.smooth('screenLeftArmZ', clampedArmSpreadZ);
 
             if (lWristVis) {
                 const elbowBend = (lw.y - le.y) * 3.5 - 0.4;
                 const clampedElbow = THREE.MathUtils.clamp(elbowBend, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
-                parts.rightForearm.rotation.x = this.smooth('screenLeftForeArmX', clampedElbow);
+                parts.leftForearm.rotation.x = this.smooth('screenLeftForeArmX', clampedElbow);
 
                 // Movimento lateral do antebraço (Acenar / Dar Tchau com a mão esquerda)
                 const waveDiff = (lw.x - le.x) * 3.5;
                 const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.3, 1.3);
-                parts.rightForearm.rotation.z = this.smooth('screenLeftForeArmZ', clampedWaveZ);
+                parts.leftForearm.rotation.z = this.smooth('screenLeftForeArmZ', clampedWaveZ);
             }
         }
 
-        // ── BRAÇO NA DIREITA DA TELA (controlado pelo BRAÇO DIREITO do jogador — Espelho Natural) ──
-        // Visto de trás pelo ângulo da câmera (+Z), o membro parts.leftUpperArm (X = -0.31) fica na DIREITA da tela!
+        // ── BRAÇO DIREITO DO JOGADOR → BRAÇO DIREITO DO BONECO (lado direito da tela) ──
         const re = pt(LM.R_ELBOW), rw = pt(LM.R_WRIST);
         if (rs && re && vis(LM.R_SHOULDER) > 0.25 && vis(LM.R_ELBOW) > 0.25) {
             const rWristVis = rw && vis(LM.R_WRIST) > 0.25;
@@ -226,22 +223,21 @@ export class AvatarAnimator {
 
             const rawArmElevationX = -elevation * 4.0;
             const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
-            // Abrir braço direito para fora (para a direita da tela = rotação Z negativa em parts.leftUpperArm)
             const spreadDistance = Math.abs((rWristVis ? rw.x : re.x) - rs.x);
             const clampedArmSpreadZ = -THREE.MathUtils.clamp(spreadDistance * 3.0, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
-            parts.leftUpperArm.rotation.x = this.smooth('screenRightArmX', clampedArmElevationX);
-            parts.leftUpperArm.rotation.z = this.smooth('screenRightArmZ', clampedArmSpreadZ);
+            parts.rightUpperArm.rotation.x = this.smooth('screenRightArmX', clampedArmElevationX);
+            parts.rightUpperArm.rotation.z = this.smooth('screenRightArmZ', clampedArmSpreadZ);
 
             if (rWristVis) {
                 const elbowBend = (rw.y - re.y) * 3.5 - 0.4;
                 const clampedElbow = THREE.MathUtils.clamp(elbowBend, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
-                parts.leftForearm.rotation.x = this.smooth('screenRightForeArmX', clampedElbow);
+                parts.rightForearm.rotation.x = this.smooth('screenRightForeArmX', clampedElbow);
 
                 // Movimento lateral do antebraço (Acenar / Dar Tchau com a mão direita)
                 const waveDiff = (rw.x - re.x) * 3.5;
                 const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.3, 1.3);
-                parts.leftForearm.rotation.z = this.smooth('screenRightForeArmZ', clampedWaveZ);
+                parts.rightForearm.rotation.z = this.smooth('screenRightForeArmZ', clampedWaveZ);
             }
         }
 
@@ -251,7 +247,7 @@ export class AvatarAnimator {
         const rKneeVis = rk && vis(LM.R_KNEE) > 0.25;
 
         if (lKneeVis || rKneeVis) {
-            // Perna esquerda do jogador -> Perna na esquerda da tela (parts.rightThigh)
+            // Perna esquerda do jogador -> Perna na esquerda da tela (parts.leftThigh)
             if (lKneeVis && lh) {
                 const lDist = lk.y - lh.y;
                 const lLift = Math.max(0, 0.22 - lDist);
@@ -260,14 +256,14 @@ export class AvatarAnimator {
                 const rawShinAngle = lLift * 6.5;
                 const clampedShin = THREE.MathUtils.clamp(rawShinAngle, ANGLE_LIMITS.KNEE_FLEX_MIN, ANGLE_LIMITS.KNEE_FLEX_MAX);
 
-                parts.rightThigh.rotation.x = this.smooth('screenLeftThighX', clampedThigh, 0.35);
-                parts.rightShin.rotation.x = this.smooth('screenLeftShinX', clampedShin, 0.35);
+                parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', clampedThigh, 0.35);
+                parts.leftShin.rotation.x = this.smooth('screenLeftShinX', clampedShin, 0.35);
             } else {
-                parts.rightThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.25);
-                parts.rightShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.25);
+                parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.25);
+                parts.leftShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.25);
             }
 
-            // Perna direita do jogador -> Perna na direita da tela (parts.leftThigh)
+            // Perna direita do jogador -> Perna na direita da tela (parts.rightThigh)
             if (rKneeVis && rh) {
                 const rDist = rk.y - rh.y;
                 const rLift = Math.max(0, 0.22 - rDist);
@@ -276,18 +272,18 @@ export class AvatarAnimator {
                 const rawShinAngle = rLift * 6.5;
                 const clampedShin = THREE.MathUtils.clamp(rawShinAngle, ANGLE_LIMITS.KNEE_FLEX_MIN, ANGLE_LIMITS.KNEE_FLEX_MAX);
 
-                parts.leftThigh.rotation.x = this.smooth('screenRightThighX', clampedThigh, 0.35);
-                parts.leftShin.rotation.x = this.smooth('screenRightShinX', clampedShin, 0.35);
+                parts.rightThigh.rotation.x = this.smooth('screenRightThighX', clampedThigh, 0.35);
+                parts.rightShin.rotation.x = this.smooth('screenRightShinX', clampedShin, 0.35);
             } else {
-                parts.leftThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.25);
-                parts.leftShin.rotation.x = this.smooth('screenRightShinX', 0, 0.25);
+                parts.rightThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.25);
+                parts.rightShin.rotation.x = this.smooth('screenRightShinX', 0, 0.25);
             }
         } else {
             // Pernas não visíveis na câmera: repouso absoluto, nunca balança sozinho
-            parts.leftThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.3);
-            parts.rightThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.3);
-            parts.leftShin.rotation.x = this.smooth('screenRightShinX', 0, 0.3);
-            parts.rightShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.3);
+            parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.3);
+            parts.rightThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.3);
+            parts.leftShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.3);
+            parts.rightShin.rotation.x = this.smooth('screenRightShinX', 0, 0.3);
         }
     }
 

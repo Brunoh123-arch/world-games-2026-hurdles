@@ -117,7 +117,6 @@ export class GameManager {
     this.sceneManager.scene.add(stadiumGroup);
 
     this.avatarBuilder = new AvatarBuilder();
-    await this.avatarBuilder.init();
     this.avatarAnimator = new AvatarAnimator();
 
     onProgress?.('Placing hurdles...', 30);
