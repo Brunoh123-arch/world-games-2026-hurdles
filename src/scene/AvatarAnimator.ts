@@ -61,11 +61,11 @@ export class AvatarAnimator {
     private time: number = 0;
     private smoothedAngles: Record<string, number> = {};
 
-    private smooth(key: string, target: number, defaultAlpha: number = 0.65): number {
+    private smooth(key: string, target: number, defaultAlpha: number = 0.85): number {
         if (this.smoothedAngles[key] === undefined) this.smoothedAngles[key] = target;
         const diff = Math.abs(target - this.smoothedAngles[key]);
-        // Resposta imediata em tempo real (sem delay) para acenos, tchau e movimentos rápidos
-        const alpha = diff > 0.08 ? 0.88 : defaultAlpha;
+        // Resposta instantânea em tempo real (zero delay perceptível)
+        const alpha = diff > 0.04 ? 0.95 : defaultAlpha;
         this.smoothedAngles[key] += (target - this.smoothedAngles[key]) * alpha;
         return this.smoothedAngles[key];
     }
@@ -109,16 +109,16 @@ export class AvatarAnimator {
         if (state.mode === 'run') {
             if (runAction) {
                 if (!runAction.isRunning()) {
-                    idleAction?.crossFadeTo(runAction, 0.18, true);
+                    idleAction?.crossFadeTo(runAction, 0.10, true);
                     runAction.play();
                 }
                 const speedNorm = Math.min(1.5, Math.max(0.2, state.speed));
-                runAction.timeScale = 0.85 + speedNorm * 1.2;
+                runAction.timeScale = 0.90 + speedNorm * 1.35;
             }
         } else if (state.mode === 'idle') {
             if (idleAction) {
                 if (!idleAction.isRunning()) {
-                    runAction?.crossFadeTo(idleAction, 0.22, true);
+                    runAction?.crossFadeTo(idleAction, 0.12, true);
                     idleAction.play();
                 }
                 idleAction.timeScale = 1.0;

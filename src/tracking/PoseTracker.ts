@@ -74,21 +74,25 @@ export class PoseTracker {
         return this.poseLandmarker !== null;
     }
 
+    private lastVideoTime = -1;
+
     public detect(video: HTMLVideoElement, timestamp: number): any | null {
         if (!this.poseLandmarker || !video || video.readyState < 2 || video.videoWidth === 0) {
             return this.lastResult;
         }
 
-        if (timestamp - this.lastDetectionTime >= this.FRAME_INTERVAL) {
+        // Executa imediatamente quando um novo frame da webcam fica pronto (Zero Delay / Real-Time)
+        if (video.currentTime !== this.lastVideoTime && timestamp > this.lastDetectionTime) {
             try {
                 const result = this.poseLandmarker.detectForVideo(video, timestamp);
+                this.lastVideoTime = video.currentTime;
+                this.lastDetectionTime = timestamp;
                 if (result && result.landmarks && result.landmarks.length > 0) {
                     this.lastResult = result;
-                    this.lastDetectionTime = timestamp;
                 }
             } catch (error) {
-                console.warn('Error during pose detection:', error);
-                return null;
+                // Fallback gracioso sem travar o loop
+                return this.lastResult;
             }
         }
 

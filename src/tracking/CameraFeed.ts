@@ -50,7 +50,7 @@ export class CameraFeed {
                     video: {
                         width: { ideal: 640 },
                         height: { ideal: 480 },
-                        frameRate: { ideal: 30, max: 30 }
+                        frameRate: { ideal: 60, min: 30 }
                     },
                     audio: false
                 });

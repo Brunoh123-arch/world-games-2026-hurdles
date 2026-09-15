@@ -30,7 +30,7 @@ export class SceneManager {
             powerPreference: 'high-performance'
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.1;
         this.renderer.shadowMap.enabled = true;
@@ -43,8 +43,8 @@ export class SceneManager {
         this.dirLight = new THREE.DirectionalLight(0xfffaed, 2.0);
         this.dirLight.position.set(25, 45, 20);
         this.dirLight.castShadow = true;
-        this.dirLight.shadow.mapSize.width = 2048;
-        this.dirLight.shadow.mapSize.height = 2048;
+        this.dirLight.shadow.mapSize.width = 1024;
+        this.dirLight.shadow.mapSize.height = 1024;
         this.dirLight.shadow.camera.near = 1.0;
         this.dirLight.shadow.camera.far = 120;
         this.dirLight.shadow.camera.left = -15;

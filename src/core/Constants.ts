@@ -21,7 +21,7 @@ export const SPRINT_SPEED = 8.5;               // m/s at moderate cadence
 export const MAX_SPEED = 11.0;                 // m/s at max cadence
 export const TURBO_SPEED = 12.5;               // m/s turbo mode
 export const SPEED_DRAG = 0.96;                // per-frame speed decay when idle
-export const SPEED_LERP = 0.20;                // smooth and responsive speed transition
+export const SPEED_LERP = 0.45;                // instantaneous and responsive physical acceleration
 
 /* ── Jump ─────────────────────────────────────────────────── */
 export const JUMP_DURATION = 0.55;             // seconds in air

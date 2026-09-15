@@ -18,6 +18,7 @@ export class MotionAnalyzer {
   private recentSteps: number[] = [];
   private lastStepTime = 0;
   private currentSpeedFactor = 0;
+  private currentInstantCadence = 0;
 
   // ── Jump ──
   private baselineYWindow: number[] = [];
@@ -100,27 +101,35 @@ export class MotionAnalyzer {
       this.prevKneeSign = 0;
     }
 
-    // ── 3. REGISTRO DE PASSADAS E CÁLCULO DE CADÊNCIA REAL ─────────
-    // Debounce mínimo entre passos humanos: 130ms (máx ~7.5 passos/s)
+    // ── 3. REGISTRO DE PASSADAS E CÁLCULO DE CADÊNCIA EM TEMPO REAL ─────────
     if (stepDetected) {
-      if (timestamp - this.lastStepTime >= 130) {
+      const stepDelta = timestamp - this.lastStepTime;
+      if (stepDelta >= 110) { // Max ~9 passos/s
         this.recentSteps.push(timestamp);
+        // Cadência instantânea entre passos alternados consecutivos (Zero Delay)
+        if (stepDelta < 600) {
+          this.currentInstantCadence = Math.min(5.5, 1000 / stepDelta);
+        } else {
+          // Primeira passada vindo do repouso: resposta imediata
+          this.currentInstantCadence = 2.4;
+        }
         this.lastStepTime = timestamp;
       }
     }
 
-    // Janela deslizante de 1.0s para medir cadência instantânea
+    // Janela deslizante de 1.0s para estabilidade
     while (this.recentSteps.length > 0 && timestamp - this.recentSteps[0] > 1000) {
       this.recentSteps.shift();
     }
 
-    // Se ficar mais de 450ms sem dar passada, o jogador PAROU de correr no lugar
+    // Se ficar mais de 380ms sem dar passada, o jogador parou de correr no lugar
     const timeSinceLastStep = timestamp - this.lastStepTime;
     let cadenceHz = 0;
-    if (kneesTracked && this.recentSteps.length > 0 && timeSinceLastStep <= 450) {
-      cadenceHz = this.recentSteps.length; // passos no último 1s = passos/segundo
+    if (kneesTracked && timeSinceLastStep <= 380) {
+      cadenceHz = Math.max(this.currentInstantCadence, this.recentSteps.length);
     } else {
       cadenceHz = 0;
+      this.currentInstantCadence = 0;
       this.recentSteps = [];
     }
     state.cadence = cadenceHz;
@@ -137,19 +146,19 @@ export class MotionAnalyzer {
       // Corrida moderada (65%)
       targetSpeed = 0.65;
     } else if (cadenceHz >= 1.0) {
-      // Trote leve inicial (40%)
-      targetSpeed = 0.40;
+      // Trote leve inicial (45%)
+      targetSpeed = 0.45;
     } else {
       // PARADO ABSOLUTO (Sem movimento ou pernas não visíveis)
       targetSpeed = 0.0;
     }
 
-    // Aceleração rápida (0.30) e frenagem imediata ao parar (0.35)
+    // Aceleração ultrarrápida (0.65) e parada direta (0.50) sem delay
     if (targetSpeed > this.currentSpeedFactor) {
-      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.30;
+      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.65;
     } else {
-      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.35;
-      if (this.currentSpeedFactor < 0.04) {
+      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.50;
+      if (this.currentSpeedFactor < 0.03) {
         this.currentSpeedFactor = 0.0;
       }
     }
