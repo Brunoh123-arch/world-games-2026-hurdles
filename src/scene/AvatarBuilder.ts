@@ -6,6 +6,14 @@ import type { Country } from '../types';
 export interface AvatarParts {
     head: THREE.Object3D;
     torso: THREE.Object3D;
+    screenLeftArm: THREE.Object3D;
+    screenLeftForearm: THREE.Object3D;
+    screenRightArm: THREE.Object3D;
+    screenRightForearm: THREE.Object3D;
+    screenLeftLeg: THREE.Object3D;
+    screenLeftShin: THREE.Object3D;
+    screenRightLeg: THREE.Object3D;
+    screenRightShin: THREE.Object3D;
     leftUpperArm: THREE.Object3D;
     leftForearm: THREE.Object3D;
     rightUpperArm: THREE.Object3D;
@@ -20,6 +28,7 @@ export interface AvatarParts {
     actions?: { run?: THREE.AnimationAction; idle?: THREE.AnimationAction; };
     isGLTF?: boolean;
 }
+
 export class AvatarBuilder {
     private templateScene: THREE.Group | null = null;
     private runClip: THREE.AnimationClip | null = null;
@@ -29,8 +38,8 @@ export class AvatarBuilder {
     public async init(): Promise<void> {
         const loader = new GLTFLoader();
         try {
-            // Load runner.glb - textured realistic human with Mixamo skeleton
-            const avatarGltf = await loader.loadAsync('/models/runner.glb');
+            // Load Ready Player Me realistic 3D human runner
+            const avatarGltf = await loader.loadAsync('/models/readyplayer.me.glb');
             this.templateScene = avatarGltf.scene;
             this.templateScene.traverse((child) => {
                 if ((child as THREE.Mesh).isMesh) {
@@ -39,28 +48,34 @@ export class AvatarBuilder {
                 }
             });
 
-            // Load soldier.glb for motion-captured Run/Idle animations
-            // Same Mixamo skeleton (65 bones, same mixamorig: names) - direct clip use
+            // Load mocap animations and retarget tracks by stripping mixamorig: prefix
             const animGltf = await loader.loadAsync('/models/soldier.glb');
             if (animGltf.animations && animGltf.animations.length > 0) {
                 const rawRun = animGltf.animations.find((a) => a.name === 'Run');
                 const rawIdle = animGltf.animations.find((a) => a.name === 'Idle');
-                if (rawRun) this.runClip = this.stripToRotations(rawRun);
-                if (rawIdle) this.idleClip = this.stripToRotations(rawIdle);
+                if (rawRun) this.runClip = this.retargetClip(rawRun, 'Run');
+                if (rawIdle) this.idleClip = this.retargetClip(rawIdle, 'Idle');
             }
 
             this.isLoaded = true;
-            console.log('AvatarBuilder: runner.glb + soldier.glb animations loaded.');
+            console.log('AvatarBuilder: Ready Player Me human runner + mocap animations loaded.');
         } catch (err) {
             console.warn('AvatarBuilder: GLB load failed, procedural fallback:', err);
             this.isLoaded = false;
         }
     }
 
-    /** Keep only quaternion tracks for in-place animation */
-    private stripToRotations(clip: THREE.AnimationClip): THREE.AnimationClip {
-        const tracks = clip.tracks.filter(t => t.name.endsWith('.quaternion'));
-        return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+    private retargetClip(sourceClip: THREE.AnimationClip, name: string): THREE.AnimationClip {
+        const tracks: THREE.KeyframeTrack[] = [];
+        for (const track of sourceClip.tracks) {
+            const newTrackName = track.name.replace(/^mixamorig:/, '').replace(/^.*mixamorig:/, '');
+            if (newTrackName.endsWith('.quaternion')) {
+                const newTrack = track.clone();
+                newTrack.name = newTrackName;
+                tracks.push(newTrack);
+            }
+        }
+        return new THREE.AnimationClip(name, sourceClip.duration, tracks);
     }
 
     public createAvatar(country: Country): { group: THREE.Group; parts: AvatarParts } {
@@ -69,52 +84,60 @@ export class AvatarBuilder {
         }
         return this.createProceduralAvatar(country);
     }
+
     private createGLTFAvatar(country: Country): { group: THREE.Group; parts: AvatarParts } {
-        const cloned = SkeletonUtils.clone(this.templateScene!) as THREE.Group;
-
-        // Wrapper group so we can fix facing direction
-        const group = new THREE.Group();
-        group.add(cloned);
-
-        // The runner.glb Character root has +90deg X, soldier has -90deg X.
-        // The Run animation was captured on soldier. We adjust the root rotation
-        // to match soldier so the mocap clips produce correct orientation.
-        const charNode = cloned.getObjectByName('Character');
-        if (charNode) {
-            charNode.quaternion.set(-0.7071067690849304, 0, 0, 0.7071067690849304);
-            charNode.scale.set(0.01, 0.01, 0.01);
-        }
+        const group = SkeletonUtils.clone(this.templateScene!) as THREE.Group;
 
         const findBone = (name: string): THREE.Object3D => {
-            return cloned.getObjectByName(name) || cloned;
+            return group.getObjectByName(name) || group;
         };
 
-        const head = findBone('mixamorig:Head');
-        const torso = findBone('mixamorig:Spine1');
-        const chest = findBone('mixamorig:Spine2');
+        const head = findBone('Head');
+        const torso = findBone('Spine1') || findBone('Spine');
+        const chest = findBone('Spine2') || torso;
 
-        // ESPELHO NATURAL: bone RightArm fica na esquerda da tela (camera atras)
-        const leftUpperArm = findBone('mixamorig:RightArm');
-        const leftForearm = findBone('mixamorig:RightForeArm');
-        const rightUpperArm = findBone('mixamorig:LeftArm');
-        const rightForearm = findBone('mixamorig:LeftForeArm');
-        const leftThigh = findBone('mixamorig:RightUpLeg');
-        const leftShin = findBone('mixamorig:RightLeg');
-        const rightThigh = findBone('mixamorig:LeftUpLeg');
-        const rightShin = findBone('mixamorig:LeftLeg');
-        const leftFoot = findBone('mixamorig:RightFoot');
-        const rightFoot = findBone('mixamorig:LeftFoot');
+        // Bones: RightArm (x = -0.047) is on the screen-LEFT side when viewed from behind (+Z)
+        //        LeftArm  (x = +0.047) is on the screen-RIGHT side
+        const screenLeftArm = findBone('RightArm');
+        const screenLeftForearm = findBone('RightForeArm');
+        const screenRightArm = findBone('LeftArm');
+        const screenRightForearm = findBone('LeftForeArm');
+        const screenLeftLeg = findBone('RightUpLeg');
+        const screenLeftShin = findBone('RightLeg');
+        const screenRightLeg = findBone('LeftUpLeg');
+        const screenRightShin = findBone('LeftLeg');
+        const leftFoot = findBone('LeftFoot');
+        const rightFoot = findBone('RightFoot');
 
-        // Race bib on chest
+        // Customize outfit colors per country
+        group.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                const mesh = child as THREE.Mesh;
+                if (mesh.name === 'Wolf3D_Outfit_Top' && mesh.material) {
+                    const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                    mat.color.setHex(country.jerseyColor || 0x009c3b);
+                    mesh.material = mat;
+                } else if (mesh.name === 'Wolf3D_Outfit_Bottom' && mesh.material) {
+                    const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                    mat.color.setHex(country.shortsColor || 0x002776);
+                    mesh.material = mat;
+                } else if (mesh.name === 'Wolf3D_Outfit_Footwear' && mesh.material) {
+                    const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                    mat.color.setHex(country.accentColor || 0xffdf00);
+                    mesh.material = mat;
+                }
+            }
+        });
+
+        // Olympic race bib on chest
         const bib = this.createRaceBib(country);
-        bib.position.set(0, 8, 4);
-        bib.scale.set(22, 16, 1);
+        bib.position.set(0, 0.12, 0.12);
+        bib.scale.set(0.85, 0.85, 0.85);
         chest.add(bib);
 
-        // AnimationMixer on cloned scene - clips use same mixamorig: bone names
-        const mixer = new THREE.AnimationMixer(cloned);
+        // Setup AnimationMixer
+        const mixer = new THREE.AnimationMixer(group);
         const actions: { run?: THREE.AnimationAction; idle?: THREE.AnimationAction } = {};
-
         if (this.runClip) {
             actions.run = mixer.clipAction(this.runClip);
             actions.run.setLoop(THREE.LoopRepeat, Infinity);
@@ -129,16 +152,25 @@ export class AvatarBuilder {
             group,
             parts: {
                 head, torso,
-                leftUpperArm, leftForearm,
-                rightUpperArm, rightForearm,
-                leftThigh, leftShin,
-                rightThigh, rightShin,
+                screenLeftArm, screenLeftForearm,
+                screenRightArm, screenRightForearm,
+                screenLeftLeg, screenLeftShin,
+                screenRightLeg, screenRightShin,
+                leftUpperArm: screenRightArm,
+                leftForearm: screenRightForearm,
+                rightUpperArm: screenLeftArm,
+                rightForearm: screenLeftForearm,
+                leftThigh: screenRightLeg,
+                leftShin: screenRightShin,
+                rightThigh: screenLeftLeg,
+                rightShin: screenLeftShin,
                 leftFoot, rightFoot,
                 mixer, actions,
                 isGLTF: true
             }
         };
     }
+
     private createRaceBib(country: Country): THREE.Mesh {
         const c = document.createElement('canvas');
         c.width = 256; c.height = 180;
@@ -157,7 +189,7 @@ export class AvatarBuilder {
         }
         const tex = new THREE.CanvasTexture(c);
         const geo = new THREE.PlaneGeometry(0.24, 0.17);
-        const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+        const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true });
         return new THREE.Mesh(geo, mat);
     }
 
@@ -168,22 +200,15 @@ export class AvatarBuilder {
         const shortsMat = new THREE.MeshStandardMaterial({ color: country.shortsColor || 0x002776, roughness: 0.75 });
         const darkMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 });
 
-        const headGroup = new THREE.Group();
-        headGroup.position.set(0, 1.62, 0);
+        const headGroup = new THREE.Group(); headGroup.position.set(0, 1.62, 0);
         const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.20, 24, 24), skinMat);
-        headMesh.castShadow = true;
-        headGroup.add(headMesh);
-        group.add(headGroup);
+        headMesh.castShadow = true; headGroup.add(headMesh); group.add(headGroup);
 
-        const torsoGroup = new THREE.Group();
-        torsoGroup.position.set(0, 0.95, 0);
+        const torsoGroup = new THREE.Group(); torsoGroup.position.set(0, 0.95, 0);
         const chestMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.17, 0.65, 16), jerseyMat);
-        chestMesh.castShadow = true;
-        torsoGroup.add(chestMesh);
+        chestMesh.castShadow = true; torsoGroup.add(chestMesh);
         const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.22, 16), shortsMat);
-        pelvis.position.set(0, -0.36, 0);
-        torsoGroup.add(pelvis);
-        group.add(torsoGroup);
+        pelvis.position.set(0, -0.36, 0); torsoGroup.add(pelvis); group.add(torsoGroup);
 
         const limb = (tR: number, bR: number, len: number, mat: THREE.Material) => {
             const p = new THREE.Group();
@@ -207,6 +232,10 @@ export class AvatarBuilder {
             group,
             parts: {
                 head: headGroup, torso: torsoGroup,
+                screenLeftArm: rUA, screenLeftForearm: rFA,
+                screenRightArm: lUA, screenRightForearm: lFA,
+                screenLeftLeg: rTh, screenLeftShin: rSh,
+                screenRightLeg: lTh, screenRightShin: lSh,
                 leftUpperArm: lUA, leftForearm: lFA,
                 rightUpperArm: rUA, rightForearm: rFA,
                 leftThigh: lTh, leftShin: lSh,
