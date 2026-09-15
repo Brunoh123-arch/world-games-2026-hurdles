@@ -28,15 +28,24 @@ export class CameraRig {
             }
         }
 
-        const heightOffset = (this.slowMoActive && this.slowMoTimer > 0) ? 2.3 : CAMERA_OFFSET_Y;
-        const distOffset = (this.slowMoActive && this.slowMoTimer > 0) ? -4.5 : CAMERA_OFFSET_Z;
+        const aspect = window.innerWidth / window.innerHeight;
+        const isPortrait = aspect < 1.0;
 
-        this.targetPosition.set(targetX, heightOffset, targetZ + distOffset);
-        
+        // Configurações ampliadas de câmera (Mobile Portrait vs Desktop Landscape)
+        let baseHeight = isPortrait ? 2.0 : CAMERA_OFFSET_Y;
+        let baseDist = isPortrait ? -3.6 : CAMERA_OFFSET_Z;
+
+        if (this.slowMoActive && this.slowMoTimer > 0) {
+            baseHeight = 1.7;
+            baseDist = -3.0;
+        }
+
+        this.targetPosition.set(targetX, baseHeight, targetZ + baseDist);
         this.camera.position.lerp(this.targetPosition, CAMERA_LERP * currentDt * 60);
 
-        // Dynamic FOV expansion at high speeds (Arcade rush feel)
-        const targetFov = 58 + Math.min(1.0, speed / MAX_SPEED) * 14;
+        // Dynamic FOV: no modo vertical usamos FOV mais aberto para a pista esticar até o topo da tela
+        const defaultFov = isPortrait ? 72 : 58;
+        const targetFov = defaultFov + Math.min(1.0, speed / MAX_SPEED) * 12;
         this.camera.fov += (targetFov - this.camera.fov) * 0.1;
         this.camera.updateProjectionMatrix();
 
@@ -48,7 +57,10 @@ export class CameraRig {
             this.camera.position.z += (Math.random() - 0.5) * intensity;
         }
         
-        this.camera.lookAt(targetX, 1.1, targetZ + 5.5);
+        // Ponto focal: olha para a pista à frente
+        const lookY = isPortrait ? 1.4 : 1.15;
+        const lookAheadZ = isPortrait ? 6.5 : 5.5;
+        this.camera.lookAt(targetX, lookY, targetZ + lookAheadZ);
     }
 
     public getCamera(): THREE.PerspectiveCamera {

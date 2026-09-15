@@ -94,6 +94,7 @@ export class GameManager {
     jumpDetected: false,
     armsRaised: false,
     confidence: 0,
+    kneesTracked: false,
   };
 
   /* ── Hurdle tracking ──────────────────────────────────── */
@@ -116,6 +117,7 @@ export class GameManager {
     this.sceneManager.scene.add(stadiumGroup);
 
     this.avatarBuilder = new AvatarBuilder();
+    await this.avatarBuilder.init();
     this.avatarAnimator = new AvatarAnimator();
 
     onProgress?.('Placing hurdles...', 30);
@@ -200,27 +202,15 @@ export class GameManager {
     window.addEventListener('pointerdown', resumeAudio);
     window.addEventListener('keydown', resumeAudio);
 
-    // ── Keyboard Controls (for desktop testing & companion play) ──
+    // ── Keyboard Controls (optional for desktop developer testing) ──
     window.addEventListener('keydown', (e) => {
       if (this.state !== GameState.RACING) return;
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         this.lastMotion.jumpDetected = true;
       } else if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'KeyA', 'KeyD', 'KeyS'].includes(e.code)) {
-        this.lastMotion.speedFactor = Math.min(1.0, this.lastMotion.speedFactor + 0.18);
-        this.lastMotion.cadence = Math.min(6, this.lastMotion.cadence + 0.5);
-      }
-    });
-
-    // ── Touch / Tap Controls (mobile screen fallback) ──
-    window.addEventListener('pointerdown', (e) => {
-      if (this.state !== GameState.RACING) return;
-      // Tap in top 35% of screen triggers jump
-      if (e.clientY < window.innerHeight * 0.35) {
-        this.lastMotion.jumpDetected = true;
-      } else {
-        // Tap in bottom 65% boosts sprint cadence
-        this.lastMotion.speedFactor = Math.min(1.0, this.lastMotion.speedFactor + 0.14);
-        this.lastMotion.cadence = Math.min(6, this.lastMotion.cadence + 0.4);
+        this.lastMotion.isRunning = true;
+        this.lastMotion.speedFactor = Math.min(1.0, this.lastMotion.speedFactor + 0.25);
+        this.lastMotion.cadence = Math.min(6, this.lastMotion.cadence + 0.8);
       }
     });
   }
@@ -238,24 +228,29 @@ export class GameManager {
         this.hud.hide();
         this.podiumScreen.hide();
         this.calibrationScreen.hide();
+        this.cameraFeed.hidePiP();
+        this.cameraFeed.setCalibrationCanvas(null);
         this.countrySelector.show();
         break;
 
       case GameState.CALIBRATION:
         this.countrySelector.hide();
         this.setupRunners();
-        this.startCamera();
+        this.cameraFeed.setCalibrationCanvas(this.calibrationScreen.getCanvas());
+        this.cameraFeed.hidePiP();
         this.calibrationScreen.show();
-        this.cameraFeed.showPiP();
+        this.startCamera();
         break;
 
       case GameState.COUNTDOWN:
         this.calibrationScreen.hide();
+        this.cameraFeed.setCalibrationCanvas(null);
         this.startCountdown();
         break;
 
       case GameState.RACING:
         this.hud.show();
+        this.cameraFeed.showPiP();
         this.raceTime = 0;
         this.raceFinished = false;
         this.finishedRunners = 0;
@@ -289,10 +284,12 @@ export class GameManager {
    * ═══════════════════════════════════════════════════════ */
   private async startCamera(): Promise<void> {
     try {
+      this.calibrationScreen.setNotice('📷 Ativando câmera... Permita o acesso no navegador!');
       await this.cameraFeed.startCamera();
-    } catch (e) {
-      console.warn('Camera access denied or unavailable. Running in companion mode.', e);
-      this.calibrationScreen.setNotice('📷 Câmera indisponível. Toque em "⚡ QUICK START" para correr com toques na tela ou teclado!');
+      this.calibrationScreen.setNotice('📸 Enquadre seu corpo dentro do contorno...');
+    } catch (e: any) {
+      console.warn('Camera access denied or unavailable.', e);
+      this.calibrationScreen.setNotice('⚠️ Câmera não acessível. Verifique a permissão de câmera no ícone da barra de navegação!');
     }
   }
 
@@ -447,7 +444,10 @@ export class GameManager {
    *  POSE TRACKING UPDATE                                  *
    * ═══════════════════════════════════════════════════════ */
   private updatePoseTracking(): void {
-    if (!this.poseTracker.isReady()) return;
+    if (!this.poseTracker.isReady()) {
+      this.cameraFeed.drawPiP(undefined, false);
+      return;
+    }
 
     const video = this.cameraFeed.getVideo();
     if (!video) return;
@@ -463,11 +463,21 @@ export class GameManager {
       if (this.state === GameState.RACING || this.state === GameState.FINISH) {
         this.lastMotion = this.motionAnalyzer.update(this.latestLandmarks as any, performance.now());
       }
+    } else {
+      if (this.state === GameState.RACING || this.state === GameState.FINISH) {
+        this.lastMotion = this.motionAnalyzer.update([], performance.now());
+      }
     }
 
     // Always render camera video and skeleton smoothly at full display framerate
     const isJumping = this.runners[1]?.data.isJumping ?? false;
-    this.cameraFeed.drawPiP(this.latestLandmarks, isJumping);
+    this.cameraFeed.drawPiP(
+      this.latestLandmarks,
+      isJumping,
+      this.lastMotion.isRunning,
+      this.lastMotion.cadence,
+      this.lastMotion.kneesTracked
+    );
   }
 
   private updateCalibration(): void {
@@ -533,6 +543,9 @@ export class GameManager {
     // Speed from motion
     const targetSpeed = this.lastMotion.speedFactor * MAX_SPEED;
     d.speed += (targetSpeed - d.speed) * SPEED_LERP;
+    if (d.speed < 0.08) {
+      d.speed = 0;
+    }
 
     // Turbo popup & sound
     if (d.speed > MAX_SPEED * 0.9 && !this.turboTriggered) {
@@ -561,8 +574,11 @@ export class GameManager {
 
     // Natural decay when not actively moving via camera
     if (!this.lastMotion.isRunning) {
-      this.lastMotion.speedFactor = Math.max(0, this.lastMotion.speedFactor * SPEED_DRAG);
-      this.lastMotion.cadence = Math.max(0, this.lastMotion.cadence - dt * 2);
+      this.lastMotion.speedFactor = Math.max(0, this.lastMotion.speedFactor * 0.80);
+      this.lastMotion.cadence = Math.max(0, this.lastMotion.cadence - dt * 4);
+      if (d.speed < 0.15) {
+        d.speed = 0;
+      }
     }
 
     // Update jump
@@ -693,9 +709,9 @@ export class GameManager {
     const hurdleDist = FIRST_HURDLE_M + idx * HURDLE_SPACING_M;
     const diff = d.position - hurdleDist;
 
-    // Only check when runner crosses the hurdle zone
-    if (diff >= -0.3 && diff <= 0.5) {
-      if (d.isJumping && d.jumpProgress > 0.15 && d.jumpProgress < 0.85) {
+    // Only check when runner crosses the hurdle zone (zona mais ampla = mais tempo)
+    if (diff >= -0.5 && diff <= 0.8) {
+      if (d.isJumping && d.jumpProgress > 0.05 && d.jumpProgress < 0.95) {
         // ── CLEARED ──
         d.hurdlesCleared++;
         this.nextHurdleIndex[d.lane]++;
@@ -745,6 +761,13 @@ export class GameManager {
       }
 
       this.avatarAnimator.update(runner.parts, runner.animState, dt);
+
+      // ── POSE RETARGETING: aplica os landmarks do MediaPipe no avatar do JOGADOR ──
+      // O avatar do jogador é sempre o runner[1] (lane do meio).
+      // Quando a câmera está ativa e detectou landmarks, o avatar espelha o corpo real.
+      if (!d.isAI && this.latestLandmarks && this.latestLandmarks.length >= 17) {
+        this.avatarAnimator.applyPoseLandmarks(runner.parts, this.latestLandmarks as any, runner.animState.mode);
+      }
     }
 
     // Update hurdle physics
@@ -813,6 +836,7 @@ export class GameManager {
     this.lastMotion = {
       cadence: 0, isRunning: false, speedFactor: 0,
       jumpDetected: false, armsRaised: false, confidence: 0,
+      kneesTracked: false,
     };
     this.hurdleSystem.resetAll();
     this.particles.stopWindStreaks();

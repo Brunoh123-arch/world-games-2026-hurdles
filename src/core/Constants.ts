@@ -20,13 +20,13 @@ export const JOG_SPEED = 5.0;                  // m/s at low cadence
 export const SPRINT_SPEED = 8.5;               // m/s at moderate cadence
 export const MAX_SPEED = 11.0;                 // m/s at max cadence
 export const TURBO_SPEED = 12.5;               // m/s turbo mode
-export const SPEED_DRAG = 0.92;                // per-frame speed decay when idle
-export const SPEED_LERP = 0.08;                // smooth speed transition
+export const SPEED_DRAG = 0.96;                // per-frame speed decay when idle
+export const SPEED_LERP = 0.20;                // smooth and responsive speed transition
 
 /* ── Jump ─────────────────────────────────────────────────── */
 export const JUMP_DURATION = 0.55;             // seconds in air
 export const JUMP_HEIGHT = 2.0;                // peak height in 3D units
-export const JUMP_COOLDOWN = 0.8;              // min seconds between jumps
+export const JUMP_COOLDOWN = 0.6;              // min seconds between jumps
 export const HURDLE_JUMP_ZONE = 2.5;           // meters before hurdle to register jump
 
 /* ── Stumble ──────────────────────────────────────────────── */
@@ -34,7 +34,7 @@ export const STUMBLE_DURATION = 0.8;           // seconds of stumble
 export const STUMBLE_SPEED_PENALTY = 0.4;      // multiply speed by this during stumble
 
 /* ── Motion Detection ─────────────────────────────────────── */
-export const POSE_FPS = 15;                    // run pose detection at ~15 FPS
+export const POSE_FPS = 30;                    // run pose detection at 30 FPS
 export const CADENCE_WINDOW_S = 1.0;           // rolling window for step counting
 export const MIN_OSCILLATION_AMP = 0.012;      // minimum shoulder displacement to count
 export const JUMP_THRESHOLD = 0.15;            // % of body height for jump detection
@@ -46,18 +46,18 @@ export const CALIBRATION_CONFIDENCE = 0.6;     // min keypoint confidence
 export const CALIBRATION_VARIANCE = 0.015;     // max allowed position variance
 
 /* ── AI Runner ────────────────────────────────────────────── */
-export const AI_BASE_SPEED_MIN = 7.5;          // m/s minimum AI speed
-export const AI_BASE_SPEED_MAX = 9.5;          // m/s maximum AI speed
-export const AI_STUMBLE_CHANCE = 0.15;         // 15% chance to hit hurdle
-export const AI_RUBBER_BAND_STRENGTH = 0.3;    // how aggressively AI matches player
-export const AI_RUBBER_BAND_RANGE = 8;         // meter range for rubber-banding
+export const AI_BASE_SPEED_MIN = 6.5;          // m/s minimum AI speed (mais lento)
+export const AI_BASE_SPEED_MAX = 8.5;          // m/s maximum AI speed (mais lento)
+export const AI_STUMBLE_CHANCE = 0.20;         // 20% chance to hit hurdle (tropeçam mais)
+export const AI_RUBBER_BAND_STRENGTH = 0.5;    // como aggressively AI matches player (maior)
+export const AI_RUBBER_BAND_RANGE = 12;        // meter range for rubber-banding (mais amplo)
 export const AI_JUMP_REACTION_MIN = 0.3;       // seconds before hurdle
 export const AI_JUMP_REACTION_MAX = 0.6;       // seconds before hurdle
 
 /* ── Camera / 3D ──────────────────────────────────────────── */
-export const CAMERA_OFFSET_Y = 3.5;            // height above track
-export const CAMERA_OFFSET_Z = -6;             // behind the runner
-export const CAMERA_LERP = 0.06;               // follow smoothness
+export const CAMERA_OFFSET_Y = 2.2;            // altura mais baixa e próxima (visão ampliada)
+export const CAMERA_OFFSET_Z = -4.0;           // mais perto do corredor (atleta ampliado na tela)
+export const CAMERA_LERP = 0.08;               // follow smoothness mais ágil e direto
 export const CAMERA_SHAKE_INTENSITY = 0.12;    // at max speed
 
 /* ── Stadium Geometry ─────────────────────────────────────── */

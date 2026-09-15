@@ -27,6 +27,8 @@ export class CalibrationScreen {
     stableFrames: 0,
   };
 
+  private cameraCanvas: HTMLCanvasElement;
+
   constructor(events: EventBus) {
     this.events = events;
 
@@ -36,12 +38,26 @@ export class CalibrationScreen {
 
     const silhouette = document.createElement('div');
     silhouette.className = 'calibration-silhouette';
-    silhouette.innerHTML = '<div style="font-size:3rem;">🏃</div>';
+
+    this.cameraCanvas = document.createElement('canvas');
+    this.cameraCanvas.className = 'calibration-camera-canvas';
+    this.cameraCanvas.width = 260;
+    this.cameraCanvas.height = 350;
+    this.cameraCanvas.style.width = '100%';
+    this.cameraCanvas.style.height = '100%';
+    this.cameraCanvas.style.objectFit = 'cover';
+    this.cameraCanvas.style.transform = 'scaleX(-1)';
+    this.cameraCanvas.style.position = 'absolute';
+    this.cameraCanvas.style.top = '0';
+    this.cameraCanvas.style.left = '0';
+    this.cameraCanvas.style.borderRadius = 'inherit';
+    silhouette.appendChild(this.cameraCanvas);
+
     this.overlay.appendChild(silhouette);
 
     this.textEl = document.createElement('div');
     this.textEl.className = 'calibration-text';
-    this.textEl.textContent = 'Step back ~1.5m so your upper body fits the outline';
+    this.textEl.textContent = 'Dê 1 a 2 passos para trás para calibrar seu corpo';
     this.overlay.appendChild(this.textEl);
 
     this.statusEl = document.createElement('div');
@@ -78,6 +94,10 @@ export class CalibrationScreen {
     this.overlay.appendChild(btnContainer);
 
     document.getElementById('ui-overlay')!.appendChild(this.overlay);
+  }
+
+  getCanvas(): HTMLCanvasElement {
+    return this.cameraCanvas;
   }
 
   show(): void {

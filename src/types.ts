@@ -76,6 +76,7 @@ export interface MotionState {
   jumpDetected: boolean;
   armsRaised: boolean;       // for celebration detection
   confidence: number;        // pose detection confidence
+  kneesTracked: boolean;     // true when player's legs are visible in camera
 }
 
 /* ── Calibration ──────────────────────────────────────────── */

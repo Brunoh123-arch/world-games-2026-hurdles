@@ -8,24 +8,26 @@ import { KEYPOINT } from '../types';
 export class MotionAnalyzer {
   private calibration: CalibrationData | null = null;
 
-  // ── Running oscillation tracking ──
-  private lastOscillationTime = 0;
-  private oscillationCount = 0;
-  private lastVerticalDir: 'up' | 'down' | null = null;
+  // ── Histórico de movimento ──
+  private prevPoints: { x: number; y: number }[] = [];
   private prevTorsoY = 0;
-  private lastKneeDiff = 0;
-  private recentCadenceSteps: number[] = [];
-  private currentSpeed = 0;
+  private prevTorsoDir: 'up' | 'down' | null = null;
+  private prevKneeSign = 0; // -1: perna direita alta, +1: perna esquerda alta, 0: neutro
+  private prevArmSign = 0;  // -1: braço direito alto, +1: braço esquerdo alto, 0: neutro
 
-  // ── Jump detection ──
-  private baselineWindow: number[] = [];
+  private recentSteps: number[] = [];
+  private lastStepTime = 0;
+  private currentSpeedFactor = 0;
+
+  // ── Jump ──
+  private baselineYWindow: number[] = [];
   private lastJumpTime = 0;
 
   constructor() {}
 
   public setCalibration(data: CalibrationData): void {
     this.calibration = data;
-    this.prevTorsoY = data.baselineShoulderY;
+    this.prevTorsoY = data.baselineShoulderY || 0.35;
   }
 
   public update(
@@ -39,19 +41,20 @@ export class MotionAnalyzer {
       jumpDetected: false,
       armsRaised: false,
       confidence: 0,
+      kneesTracked: false,
     };
 
-    if (!landmarks || landmarks.length < 25) {
-      // Natural speed decay if tracking drops
-      this.currentSpeed = Math.max(0, this.currentSpeed * 0.9);
-      state.speedFactor = this.currentSpeed;
+    if (!landmarks || landmarks.length < 17) {
+      this.currentSpeedFactor = 0;
+      this.recentSteps = [];
+      state.speedFactor = 0;
+      state.isRunning = false;
       return state;
     }
 
+    const nose = landmarks[KEYPOINT.NOSE];
     const lShoulder = landmarks[KEYPOINT.LEFT_SHOULDER];
     const rShoulder = landmarks[KEYPOINT.RIGHT_SHOULDER];
-    const lHip = landmarks[KEYPOINT.LEFT_HIP];
-    const rHip = landmarks[KEYPOINT.RIGHT_HIP];
     const lWrist = landmarks[KEYPOINT.LEFT_WRIST];
     const rWrist = landmarks[KEYPOINT.RIGHT_WRIST];
     const lKnee = landmarks[KEYPOINT.LEFT_KNEE];
@@ -60,168 +63,167 @@ export class MotionAnalyzer {
     const confS = (((lShoulder as any)?.visibility ?? 1.0) + ((rShoulder as any)?.visibility ?? 1.0)) / 2;
     state.confidence = confS;
 
-    if (confS < 0.25) {
-      this.currentSpeed = Math.max(0, this.currentSpeed * 0.9);
-      state.speedFactor = this.currentSpeed;
-      return state;
+    // Altura de referência do tronco superior (cabeça + ombros)
+    const upperY = (nose.y + lShoulder.y + rShoulder.y) / 3;
+
+    // ── 1. DETECÇÃO DE PULO (Físico real OU os 2 braços acima da cabeça) ──
+    this.detectJump(upperY, lWrist, rWrist, lShoulder, rShoulder, nose, timestamp, state);
+
+    // ── 2. VERIFICAÇÃO RIGOROSA DAS PERNAS / JOELHOS ─────────────
+    // O boneco SO anda se as pernas estiverem visíveis e o jogador correr no lugar!
+    const lKneeVis = (lKnee?.visibility ?? 0) > 0.30;
+    const rKneeVis = (rKnee?.visibility ?? 0) > 0.30;
+    const kneesTracked = !!(lKnee && rKnee && lKneeVis && rKneeVis && lKnee.y < 0.95 && rKnee.y < 0.95);
+    state.kneesTracked = kneesTracked;
+
+    let stepDetected = false;
+
+    if (kneesTracked) {
+      // Diferença vertical entre joelhos (y = 0 topo, y = 1 chão)
+      // Quando a perna esquerda levanta, lKnee.y diminui (sobe na tela) -> kneeDiff positivo
+      const kneeDiff = rKnee.y - lKnee.y;
+
+      if (kneeDiff > 0.038 && this.prevKneeSign !== 1) {
+        // Joelho esquerdo levantou na passada
+        this.prevKneeSign = 1;
+        stepDetected = true;
+      } else if (kneeDiff < -0.038 && this.prevKneeSign !== -1) {
+        // Joelho direito levantou na passada
+        this.prevKneeSign = -1;
+        stepDetected = true;
+      }
+    } else {
+      // Se as pernas NÃO estão visíveis (jogador sentado ou perto demais):
+      // Zera o histórico imediatamente para que o boneco NÃO ANDE NUNCA SOZINHO!
+      this.recentSteps = [];
+      this.currentSpeedFactor = 0;
+      this.prevKneeSign = 0;
     }
 
-    // Current torso center Y (lower number = higher on screen)
-    const currentTorsoY = (lShoulder.y + rShoulder.y + (lHip?.y ?? lShoulder.y) + (rHip?.y ?? rShoulder.y)) / 4;
-
-    // ── 1. REAL-TIME JUMP DETECTION ────────────────────────────
-    this.detectJump(currentTorsoY, timestamp, state);
-
-    // ── 2. REAL-TIME RUNNING CADENCE ───────────────────────────
-    this.detectRunning(landmarks, currentTorsoY, timestamp, state);
-
-    // ── 3. CELEBRATION (Arms Raised) ───────────────────────────
-    if (lWrist && rWrist && lShoulder && rShoulder) {
-      if ((lWrist.visibility ?? 1) > 0.4 && (rWrist.visibility ?? 1) > 0.4) {
-        if (lWrist.y < lShoulder.y && rWrist.y < rShoulder.y) {
-          state.armsRaised = true;
-        }
+    // ── 3. REGISTRO DE PASSADAS E CÁLCULO DE CADÊNCIA REAL ─────────
+    // Debounce mínimo entre passos humanos: 130ms (máx ~7.5 passos/s)
+    if (stepDetected) {
+      if (timestamp - this.lastStepTime >= 130) {
+        this.recentSteps.push(timestamp);
+        this.lastStepTime = timestamp;
       }
     }
+
+    // Janela deslizante de 1.0s para medir cadência instantânea
+    while (this.recentSteps.length > 0 && timestamp - this.recentSteps[0] > 1000) {
+      this.recentSteps.shift();
+    }
+
+    // Se ficar mais de 450ms sem dar passada, o jogador PAROU de correr no lugar
+    const timeSinceLastStep = timestamp - this.lastStepTime;
+    let cadenceHz = 0;
+    if (kneesTracked && this.recentSteps.length > 0 && timeSinceLastStep <= 450) {
+      cadenceHz = this.recentSteps.length; // passos no último 1s = passos/segundo
+    } else {
+      cadenceHz = 0;
+      this.recentSteps = [];
+    }
+    state.cadence = cadenceHz;
+
+    // ── 4. VELOCIDADE ESTRITAMENTE VINCULADA À CADÊNCIA DOS JOELHOS ──
+    let targetSpeed = 0.0;
+    if (cadenceHz >= 3.5) {
+      // Sprint máximo / Turbo (4+ passos por segundo)
+      targetSpeed = 1.0;
+    } else if (cadenceHz >= 2.5) {
+      // Corrida rápida (85%)
+      targetSpeed = 0.85;
+    } else if (cadenceHz >= 1.8) {
+      // Corrida moderada (65%)
+      targetSpeed = 0.65;
+    } else if (cadenceHz >= 1.0) {
+      // Trote leve inicial (40%)
+      targetSpeed = 0.40;
+    } else {
+      // PARADO ABSOLUTO (Sem movimento ou pernas não visíveis)
+      targetSpeed = 0.0;
+    }
+
+    // Aceleração rápida (0.30) e frenagem imediata ao parar (0.35)
+    if (targetSpeed > this.currentSpeedFactor) {
+      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.30;
+    } else {
+      this.currentSpeedFactor += (targetSpeed - this.currentSpeedFactor) * 0.35;
+      if (this.currentSpeedFactor < 0.04) {
+        this.currentSpeedFactor = 0.0;
+      }
+    }
+
+    state.speedFactor = this.currentSpeedFactor;
+    state.isRunning = this.currentSpeedFactor > 0.05 && cadenceHz >= 1.0;
 
     return state;
   }
 
-  /**
-   * Ultra-responsive jump detection:
-   * Compares current torso height against the rolling running baseline.
-   * If the body suddenly rises upward by > 4% of body frame, triggers JUMP immediately!
-   */
-  private detectJump(currentY: number, timestamp: number, state: MotionState): void {
-    // Keep a rolling baseline of recent vertical position (~400ms = ~12 frames)
-    this.baselineWindow.push(currentY);
-    if (this.baselineWindow.length > 12) {
-      this.baselineWindow.shift();
-    }
-
-    // Minimum cooldown between jumps (600ms)
+  private detectJump(
+    upperY: number,
+    lWrist: any,
+    rWrist: any,
+    lShoulder: any,
+    rShoulder: any,
+    nose: any,
+    timestamp: number,
+    state: MotionState
+  ): void {
+    // Cooldown entre pulos (600ms)
     if (timestamp - this.lastJumpTime < 600) {
       return;
     }
 
-    if (this.baselineWindow.length >= 6) {
-      // Average height over recent moments
-      const avgBaseline = this.baselineWindow.reduce((a, b) => a + b, 0) / this.baselineWindow.length;
-      
-      // Moving UP means currentY is LESS than baseline (0 is top of screen)
-      const upwardDisplacement = avgBaseline - currentY;
+    // ── 1. SALTO FÍSICO REAL (Estilo Kinect Sports) ──
+    // O jogador pula no lugar com o corpo (cabeça/tronco sobem rápido na tela)
+    this.baselineYWindow.push(upperY);
+    if (this.baselineYWindow.length > 8) {
+      this.baselineYWindow.shift();
+    }
 
-      // Sensitivity threshold (lowered from 0.15 to 0.035 for instant responsive hops)
-      const bodyScale = this.calibration ? this.calibration.bodyHeight : 0.35;
-      const threshold = Math.max(0.025, bodyScale * 0.10);
+    if (this.baselineYWindow.length >= 4) {
+      const avgY = this.baselineYWindow.reduce((a, b) => a + b, 0) / this.baselineYWindow.length;
+      const upwardDelta = avgY - upperY;
 
-      if (upwardDisplacement > threshold) {
+      // Subida vertical nítida do corpo (> 3.8% da tela para não confundir com o quique da corrida)
+      if (upwardDelta > 0.038) {
         state.jumpDetected = true;
         this.lastJumpTime = timestamp;
-        // Reset baseline window after jump
-        this.baselineWindow = [currentY];
-      }
-    }
-  }
-
-  /**
-   * Ultra-responsive running detection:
-   * Uses both knee alternate lifting AND vertical bouncing of the torso.
-   */
-  private detectRunning(
-    landmarks: { x: number; y: number; visibility?: number }[],
-    torsoY: number,
-    timestamp: number,
-    state: MotionState
-  ): void {
-    let stepDetected = false;
-
-    // A. Knee-based step detection (if legs are visible)
-    const lKnee = landmarks[KEYPOINT.LEFT_KNEE];
-    const rKnee = landmarks[KEYPOINT.RIGHT_KNEE];
-    const kneesVisible = lKnee && rKnee && (lKnee.visibility ?? 0) > 0.4 && (rKnee.visibility ?? 0) > 0.4;
-
-    if (kneesVisible) {
-      const kneeDiff = lKnee.y - rKnee.y; // positive when right knee is higher
-      // Detect transition when alternating knees pass each other with amplitude
-      if (Math.abs(kneeDiff) > 0.04) {
-        if ((kneeDiff > 0 && this.lastKneeDiff <= 0) || (kneeDiff < 0 && this.lastKneeDiff >= 0)) {
-          stepDetected = true;
-          this.lastKneeDiff = kneeDiff;
-        }
+        this.baselineYWindow = [upperY];
+        return;
       }
     }
 
-    // B. Vertical torso bounce (works even when knees are not in frame)
-    if (!stepDetected && this.prevTorsoY > 0) {
-      const deltaY = torsoY - this.prevTorsoY;
-      // If moving with sufficient vertical speed (running bounce)
-      if (Math.abs(deltaY) > 0.008) {
-        const currentDir = deltaY < 0 ? 'up' : 'down';
-        if (this.lastVerticalDir && currentDir !== this.lastVerticalDir) {
-          // Direction reversal at bottom or top of bounce = half step!
-          stepDetected = true;
-          this.lastVerticalDir = currentDir;
-        } else if (!this.lastVerticalDir) {
-          this.lastVerticalDir = currentDir;
-        }
+    // ── 2. GESTO DE SALTO: OS DOIS BRAÇOS ERGUIDOS JUNTOS ACIMA DA CABEÇA ──
+    // Mexer apenas UMA mão, balançar ou dar tchau NUNCA ativa o pulo!
+    if (lWrist && rWrist && nose && lShoulder && rShoulder) {
+      const lVis = (lWrist.visibility ?? 0) > 0.35;
+      const rVis = (rWrist.visibility ?? 0) > 0.35;
+
+      // Os DOIS pulsos precisam estar simultaneamente bem acima da cabeça (nariz)
+      const bothArmsRaisedHigh = lVis && rVis &&
+        (lWrist.y < nose.y - 0.04) &&
+        (rWrist.y < nose.y - 0.04);
+
+      if (bothArmsRaisedHigh) {
+        state.jumpDetected = true;
+        this.lastJumpTime = timestamp;
+        state.armsRaised = true;
       }
     }
-    this.prevTorsoY = torsoY;
-
-    // Record step timestamp
-    if (stepDetected) {
-      // Debounce steps (no faster than 8 steps/sec = 125ms)
-      if (timestamp - this.lastOscillationTime > 110) {
-        this.recentCadenceSteps.push(timestamp);
-        this.lastOscillationTime = timestamp;
-      }
-    }
-
-    // Keep steps from the last 1.2 seconds
-    while (this.recentCadenceSteps.length > 0 && timestamp - this.recentCadenceSteps[0] > 1200) {
-      this.recentCadenceSteps.shift();
-    }
-
-    // Calculate Cadence (steps per second)
-    const stepsInWindow = this.recentCadenceSteps.length;
-    const sps = (stepsInWindow / 1.2);
-    state.cadence = sps;
-
-    // Responsive speed mapping:
-    // 0 steps -> 0
-    // 1 step/sec -> 0.45 (solid jog)
-    // 2 steps/sec -> 0.80 (fast sprint)
-    // 3+ steps/sec -> 1.0 (MAX TURBO SPEED)
-    let targetSpeed = 0.0;
-    if (sps >= 3.0) {
-      targetSpeed = 1.0;
-    } else if (sps >= 2.0) {
-      targetSpeed = 0.75 + ((sps - 2.0) / 1.0) * 0.25;
-    } else if (sps >= 1.0) {
-      targetSpeed = 0.40 + ((sps - 1.0) / 1.0) * 0.35;
-    } else if (sps >= 0.4) {
-      targetSpeed = 0.25;
-    } else {
-      targetSpeed = 0.0;
-    }
-
-    // High responsiveness: accelerate fast (0.35), decelerate smoothly (0.12)
-    const lerpRate = targetSpeed > this.currentSpeed ? 0.35 : 0.12;
-    this.currentSpeed += (targetSpeed - this.currentSpeed) * lerpRate;
-
-    state.speedFactor = this.currentSpeed;
-    state.isRunning = this.currentSpeed > 0.15;
   }
 
   public reset(): void {
-    this.recentCadenceSteps = [];
-    this.baselineWindow = [];
-    this.currentSpeed = 0;
+    this.recentSteps = [];
+    this.baselineYWindow = [];
+    this.currentSpeedFactor = 0;
     this.lastJumpTime = 0;
-    this.lastOscillationTime = 0;
-    this.lastVerticalDir = null;
-    this.lastKneeDiff = 0;
+    this.lastStepTime = 0;
+    this.prevTorsoDir = null;
     this.prevTorsoY = 0;
+    this.prevKneeSign = 0;
+    this.prevArmSign = 0;
+    this.prevPoints = [];
   }
 }

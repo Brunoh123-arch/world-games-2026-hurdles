@@ -6,23 +6,64 @@ export class PoseTracker {
     private lastDetectionTime = 0;
     // Assuming POSE_FPS is exported from Constants, but we will define it here or import.
     // For standalone completeness without Constants if missing:
-    private readonly POSE_FPS = 15; 
-    private readonly FRAME_INTERVAL = 1000 / 15;
+    private readonly POSE_FPS = 30; 
+    private readonly FRAME_INTERVAL = 1000 / 30;
 
     public async init(): Promise<void> {
         try {
-            const vision = await FilesetResolver.forVisionTasks(
-                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm'
-            );
+            let vision;
+            try {
+                vision = await FilesetResolver.forVisionTasks('/wasm');
+                console.log('MediaPipe FilesetResolver carregado localmente (/wasm)');
+            } catch (localErr) {
+                console.warn('WASM local falhou, tentando CDN jsdelivr:', localErr);
+                vision = await FilesetResolver.forVisionTasks(
+                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
+                );
+            }
             
-            this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-                    delegate: 'GPU'
-                },
-                runningMode: 'VIDEO',
-                numPoses: 1
-            });
+            const modelPaths = [
+                '/models/pose_landmarker_lite.task',
+                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+            ];
+
+            let loaded = false;
+            for (const modelPath of modelPaths) {
+                try {
+                    this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+                        baseOptions: {
+                            modelAssetPath: modelPath,
+                            delegate: 'GPU'
+                        },
+                        runningMode: 'VIDEO',
+                        numPoses: 1
+                    });
+                    console.log(`PoseLandmarker GPU carregado com sucesso de: ${modelPath}`);
+                    loaded = true;
+                    break;
+                } catch (gpuErr) {
+                    console.warn(`GPU delegate falhou para ${modelPath}, tentando CPU:`, gpuErr);
+                    try {
+                        this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+                            baseOptions: {
+                                modelAssetPath: modelPath,
+                                delegate: 'CPU'
+                            },
+                            runningMode: 'VIDEO',
+                            numPoses: 1
+                        });
+                        console.log(`PoseLandmarker CPU carregado com sucesso de: ${modelPath}`);
+                        loaded = true;
+                        break;
+                    } catch (cpuErr) {
+                        console.warn(`CPU falhou para ${modelPath}:`, cpuErr);
+                    }
+                }
+            }
+
+            if (!loaded) {
+                throw new Error('Não foi possível carregar o modelo de pose em nenhum delegate ou caminho.');
+            }
         } catch (error) {
             console.error('Failed to initialize PoseLandmarker:', error);
             throw error;
@@ -34,7 +75,9 @@ export class PoseTracker {
     }
 
     public detect(video: HTMLVideoElement, timestamp: number): any | null {
-        if (!this.poseLandmarker) return null;
+        if (!this.poseLandmarker || !video || video.readyState < 2 || video.videoWidth === 0) {
+            return this.lastResult;
+        }
 
         if (timestamp - this.lastDetectionTime >= this.FRAME_INTERVAL) {
             try {

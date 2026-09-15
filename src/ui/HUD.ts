@@ -10,26 +10,61 @@ export class HUD {
   private positionEl: HTMLElement;
   private speedFillEl: HTMLElement;
   private distanceEl: HTMLElement;
+  private fullscreenBtn: HTMLElement;
 
   constructor(parent: HTMLElement) {
-    // ── Top HUD (timer + position) ──
+    // ── Top HUD (Placar Olímpico Ampliado) ──
     this.hudTop = document.createElement('div');
     this.hudTop.className = 'hud';
     this.hudTop.style.display = 'none';
+
+    // Scoreboard card (Lado esquerdo superior)
+    const scoreboard = document.createElement('div');
+    scoreboard.className = 'hud-scoreboard';
+
+    // Posição Gigante (1º, 2º, 3º)
+    this.positionEl = document.createElement('div');
+    this.positionEl.className = 'hud-pos-badge pos-1';
+    this.positionEl.textContent = '1';
+
+    // Bloco do Cronômetro
+    const timerBlock = document.createElement('div');
+    timerBlock.className = 'hud-timer-block';
+
+    const timerLabel = document.createElement('div');
+    timerLabel.className = 'hud-timer-label';
+    timerLabel.textContent = 'TEMPO';
 
     this.timerEl = document.createElement('div');
     this.timerEl.className = 'hud-timer';
     this.timerEl.textContent = '00:00.00';
 
-    this.positionEl = document.createElement('div');
-    this.positionEl.className = 'hud-position pos-1';
-    this.positionEl.textContent = '1st';
+    timerBlock.appendChild(timerLabel);
+    timerBlock.appendChild(this.timerEl);
 
-    this.hudTop.appendChild(this.timerEl);
-    this.hudTop.appendChild(this.positionEl);
+    scoreboard.appendChild(this.positionEl);
+    scoreboard.appendChild(timerBlock);
+    this.hudTop.appendChild(scoreboard);
+
+    // Botão de Tela Cheia / Ampliar (Esticar tela)
+    this.fullscreenBtn = document.createElement('button');
+    this.fullscreenBtn.className = 'hud-fullscreen-btn';
+    this.fullscreenBtn.innerHTML = '⛶ AMPLIAR';
+    this.fullscreenBtn.title = 'Esticar / Tela Cheia';
+    this.fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+        this.fullscreenBtn.innerHTML = '🗗 REDUZIR';
+      } else {
+        document.exitFullscreen?.().catch(() => {});
+        this.fullscreenBtn.innerHTML = '⛶ AMPLIAR';
+      }
+    });
+    this.hudTop.appendChild(this.fullscreenBtn);
+
     parent.appendChild(this.hudTop);
 
-    // ── Bottom HUD (speed bar + distance) ──
+    // ── Bottom HUD (Barra de velocidade + Distância Gigante) ──
     this.hudBottom = document.createElement('div');
     this.hudBottom.className = 'hud-bottom';
     this.hudBottom.style.display = 'none';
@@ -57,9 +92,8 @@ export class HUD {
     this.timerEl.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
 
     // Position badge
-    const suffixes = ['st', 'nd', 'rd'];
-    this.positionEl.textContent = `${position}${suffixes[position - 1]}`;
-    this.positionEl.className = `hud-position pos-${position}`;
+    this.positionEl.textContent = `${position}º`;
+    this.positionEl.className = `hud-pos-badge pos-${position}`;
 
     // Speed bar
     const pct = Math.min(100, Math.max(0, (speed / maxSpeed) * 100));

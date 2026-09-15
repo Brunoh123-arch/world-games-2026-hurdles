@@ -85,6 +85,24 @@ export class HurdleSystem {
                 bar.castShadow = true;
                 hurdleGroup.add(bar);
 
+                // ── ZONA DE SALTO VERDE (Estilo Kinect Sports) ──
+                // Faixa brilhante no chão antes da barreira indicando onde pular
+                const zoneGeo = new THREE.PlaneGeometry(HURDLE_WIDTH, 1.8);
+                const zoneMat = new THREE.MeshBasicMaterial({
+                    color: 0x00ff88,
+                    transparent: true,
+                    opacity: 0.5,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                this.geometries.push(zoneGeo);
+                this.materials.push(zoneMat);
+
+                const jumpZone = new THREE.Mesh(zoneGeo, zoneMat);
+                jumpZone.rotation.x = -Math.PI / 2;
+                jumpZone.position.set(0, 0.015, -1.1); // ~1.1m antes da barreira
+                pivot.add(jumpZone);
+
                 pivot.add(hurdleGroup);
                 this.container.add(pivot);
 
