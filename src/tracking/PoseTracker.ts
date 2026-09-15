@@ -1,30 +1,13 @@
-import { PoseLandmarker, GestureRecognizer, FilesetResolver } from '@mediapipe/tasks-vision';
-
-export interface FingerCurls {
-    thumb: number;
-    index: number;
-    middle: number;
-    ring: number;
-    pinky: number;
-}
-
-export interface HandGestureState {
-    gesture: string;
-    curls: FingerCurls;
-    wristPosition: { x: number; y: number };
-}
-
-export interface HandGesturesResult {
-    leftHand?: HandGestureState;
-    rightHand?: HandGestureState;
-}
+import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 
 export class PoseTracker {
     private poseLandmarker: PoseLandmarker | null = null;
-    private gestureRecognizer: GestureRecognizer | null = null;
     private lastResult: any = null; // PoseLandmarkerResult
     private lastDetectionTime = 0;
-    private latestHandGestures: HandGesturesResult = {};
+    // Assuming POSE_FPS is exported from Constants, but we will define it here or import.
+    // For standalone completeness without Constants if missing:
+    private readonly POSE_FPS = 30; 
+    private readonly FRAME_INTERVAL = 1000 / 30;
 
     public async init(): Promise<void> {
         try {
@@ -81,51 +64,8 @@ export class PoseTracker {
             if (!loaded) {
                 throw new Error('Não foi possível carregar o modelo de pose em nenhum delegate ou caminho.');
             }
-
-            // ── Inicialização do Gesture Recognizer (Detecção de dedos, joinha 👍, pitoco 🖕, etc.) ──
-            const gestureModelPaths = [
-                '/models/gesture_recognizer.task',
-                'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task'
-            ];
-
-            for (const gPath of gestureModelPaths) {
-                try {
-                    this.gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-                        baseOptions: {
-                            modelAssetPath: gPath,
-                            delegate: 'GPU'
-                        },
-                        runningMode: 'VIDEO',
-                        numHands: 2,
-                        minHandDetectionConfidence: 0.30,
-                        minHandPresenceConfidence: 0.30,
-                        minTrackingConfidence: 0.30
-                    });
-                    console.log(`GestureRecognizer GPU carregado com sucesso de: ${gPath}`);
-                    break;
-                } catch (gGpuErr) {
-                    console.warn(`Gesture GPU falhou para ${gPath}, tentando CPU:`, gGpuErr);
-                    try {
-                        this.gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-                            baseOptions: {
-                                modelAssetPath: gPath,
-                                delegate: 'CPU'
-                            },
-                            runningMode: 'VIDEO',
-                            numHands: 2,
-                            minHandDetectionConfidence: 0.30,
-                            minHandPresenceConfidence: 0.30,
-                            minTrackingConfidence: 0.30
-                        });
-                        console.log(`GestureRecognizer CPU carregado com sucesso de: ${gPath}`);
-                        break;
-                    } catch (gCpuErr) {
-                        console.warn(`Gesture CPU falhou para ${gPath}:`, gCpuErr);
-                    }
-                }
-            }
         } catch (error) {
-            console.error('Failed to initialize tracking models:', error);
+            console.error('Failed to initialize PoseLandmarker:', error);
             throw error;
         }
     }
@@ -152,195 +92,11 @@ export class PoseTracker {
                 }
             } catch (error) {
                 // Fallback gracioso sem travar o loop
-            }
-
-            // Executa o reconhecedor de gestos e dedos
-            if (this.gestureRecognizer) {
-                try {
-                    const gestRes = this.gestureRecognizer.recognizeForVideo(video, timestamp);
-                    this.processHandGestures(gestRes);
-                } catch (gErr) {
-                    // Ignora graciosamente sem travar o loop
-                }
+                return this.lastResult;
             }
         }
 
         return this.lastResult;
-    }
-
-    public getHandGestures(): HandGesturesResult {
-        return this.latestHandGestures;
-    }
-
-    private processHandGestures(gestRes: any): void {
-        if (!gestRes || !gestRes.landmarks || gestRes.landmarks.length === 0) {
-            return;
-        }
-
-        const poseLW = this.getKeypoint('left_wrist');
-        const poseRW = this.getKeypoint('right_wrist');
-
-        const result: HandGesturesResult = {};
-
-        for (let i = 0; i < gestRes.landmarks.length; i++) {
-            const lms = gestRes.landmarks[i];
-            if (!lms || lms.length < 21) continue;
-
-            const wrist = lms[0];
-            const rawCategory = gestRes.gestures?.[i]?.[0]?.categoryName || 'None';
-
-            // Curvatura contínua para cada um dos 5 dedos (0 = aberto/esticado, 1 = dobrado/punho)
-            const indexCurl = this.calcFingerCurl(8, 6, 5, lms);
-            const middleCurl = this.calcFingerCurl(12, 10, 9, lms);
-            const ringCurl = this.calcFingerCurl(16, 14, 13, lms);
-            const pinkyCurl = this.calcFingerCurl(20, 18, 17, lms);
-            const thumbCurl = this.calcThumbCurl(lms);
-
-            let gestureName = 'Custom';
-            let curls: FingerCurls = {
-                thumb: thumbCurl,
-                index: indexCurl,
-                middle: middleCurl,
-                ring: ringCurl,
-                pinky: pinkyCurl
-            };
-
-            // ── RECONHECIMENTO DE GESTOS ESPECIAIS ──
-            // 1. PITOCO / DEDO DO MEIO (Middle Finger) 🖕
-            // Dedo médio bem esticado (middleCurl < 0.38) enquanto indicador, anelar e mindinho estão dobrados
-            const isMiddleExtended = middleCurl < 0.38;
-            const areOthersFolded = indexCurl > 0.52 && ringCurl > 0.52 && pinkyCurl > 0.52;
-
-            if (isMiddleExtended && areOthersFolded) {
-                gestureName = 'Middle_Finger';
-                curls = {
-                    thumb: 0.85,
-                    index: 1.0,
-                    middle: 0.0, // Reto e esticado em destaque
-                    ring: 1.0,
-                    pinky: 1.0
-                };
-            } else if (rawCategory === 'Thumb_Up' || (thumbCurl < 0.30 && indexCurl > 0.55 && middleCurl > 0.55 && ringCurl > 0.55 && pinkyCurl > 0.55 && lms[4].y < lms[0].y)) {
-                // 2. BELEZA / JOINHA (Thumb Up) 👍
-                gestureName = 'Thumb_Up';
-                curls = {
-                    thumb: 0.0, // Polegar erguido
-                    index: 1.0,
-                    middle: 1.0,
-                    ring: 1.0,
-                    pinky: 1.0
-                };
-            } else if (rawCategory === 'Victory' || (indexCurl < 0.35 && middleCurl < 0.35 && ringCurl > 0.55 && pinkyCurl > 0.55)) {
-                // 3. VITÓRIA / PAZ E AMOR ✌️
-                gestureName = 'Victory';
-                curls = {
-                    thumb: 0.8,
-                    index: 0.0,
-                    middle: 0.0,
-                    ring: 1.0,
-                    pinky: 1.0
-                };
-            } else if (rawCategory === 'Pointing_Up' || (indexCurl < 0.35 && middleCurl > 0.55 && ringCurl > 0.55 && pinkyCurl > 0.55)) {
-                // 4. APONTAR ☝️
-                gestureName = 'Pointing_Up';
-                curls = {
-                    thumb: 0.8,
-                    index: 0.0,
-                    middle: 1.0,
-                    ring: 1.0,
-                    pinky: 1.0
-                };
-            } else if (indexCurl < 0.35 && pinkyCurl < 0.35 && middleCurl > 0.55 && ringCurl > 0.55) {
-                // 5. ROCK 🤘
-                gestureName = 'Rock';
-                curls = {
-                    thumb: 0.8,
-                    index: 0.0,
-                    middle: 1.0,
-                    ring: 1.0,
-                    pinky: 0.0
-                };
-            } else if (thumbCurl < 0.35 && pinkyCurl < 0.35 && indexCurl > 0.55 && middleCurl > 0.55 && ringCurl > 0.55) {
-                // 6. HANG LOOSE 🤙
-                gestureName = 'Hang_Loose';
-                curls = {
-                    thumb: 0.0,
-                    index: 1.0,
-                    middle: 1.0,
-                    ring: 1.0,
-                    pinky: 0.0
-                };
-            } else if (rawCategory === 'Closed_Fist' || (indexCurl > 0.65 && middleCurl > 0.65 && ringCurl > 0.65 && pinkyCurl > 0.65)) {
-                // 7. PUNHO FECHADO ✊
-                gestureName = 'Closed_Fist';
-                curls = {
-                    thumb: 1.0,
-                    index: 1.0,
-                    middle: 1.0,
-                    ring: 1.0,
-                    pinky: 1.0
-                };
-            } else if (rawCategory === 'Open_Palm' || (indexCurl < 0.35 && middleCurl < 0.35 && ringCurl < 0.35 && pinkyCurl < 0.35 && thumbCurl < 0.40)) {
-                // 8. MÃO ABERTA 🖐️
-                gestureName = 'Open_Palm';
-                curls = {
-                    thumb: 0.0,
-                    index: 0.0,
-                    middle: 0.0,
-                    ring: 0.0,
-                    pinky: 0.0
-                };
-            }
-
-            // Determina se a mão pertence ao braço esquerdo ou direito do jogador
-            let isPlayerLeftArm = false;
-            if (poseLW && poseRW) {
-                const distL = Math.hypot(wrist.x - poseLW.x, wrist.y - poseLW.y);
-                const distR = Math.hypot(wrist.x - poseRW.x, wrist.y - poseRW.y);
-                isPlayerLeftArm = distL < distR;
-            } else {
-                isPlayerLeftArm = wrist.x < 0.5;
-            }
-
-            const state: HandGestureState = {
-                gesture: gestureName,
-                curls,
-                wristPosition: { x: wrist.x, y: wrist.y }
-            };
-
-            if (isPlayerLeftArm) {
-                result.leftHand = state;
-            } else {
-                result.rightHand = state;
-            }
-        }
-
-        this.latestHandGestures = result;
-    }
-
-    private calcFingerCurl(tipIdx: number, pipIdx: number, mcpIdx: number, lms: any[]): number {
-        const wrist = lms[0];
-        const tip = lms[tipIdx];
-        const mcp = lms[mcpIdx];
-        if (!wrist || !tip || !mcp) return 0;
-        const dTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
-        const dMcp = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
-        if (dMcp < 0.001) return 0;
-        const ratio = dTip / dMcp;
-        const curl = (1.75 - ratio) / 0.75;
-        return Math.max(0, Math.min(1, curl));
-    }
-
-    private calcThumbCurl(lms: any[]): number {
-        const tip = lms[4];
-        const indexMcp = lms[5];
-        const pinkyMcp = lms[17];
-        if (!tip || !indexMcp || !pinkyMcp) return 0;
-        const handWidth = Math.hypot(indexMcp.x - pinkyMcp.x, indexMcp.y - pinkyMcp.y);
-        if (handWidth < 0.001) return 0;
-        const dTip = Math.hypot(tip.x - indexMcp.x, tip.y - indexMcp.y);
-        const curl = (0.75 - (dTip / handWidth)) / 0.45;
-        return Math.max(0, Math.min(1, curl));
     }
 
     public getKeypoint(name: string): { x: number, y: number, z: number, visibility: number } | null {
@@ -389,11 +145,6 @@ export class PoseTracker {
             this.poseLandmarker.close();
             this.poseLandmarker = null;
         }
-        if (this.gestureRecognizer) {
-            this.gestureRecognizer.close();
-            this.gestureRecognizer = null;
-        }
         this.lastResult = null;
-        this.latestHandGestures = {};
     }
 }

@@ -83,8 +83,6 @@ export class GameManager {
   private turboTriggered = false;
   private finishedRunners = 0;
   private raceFinished = false;
-  private lastGestureTime = 0;
-  private lastShownGesture = '';
 
   /* ── Loop ─────────────────────────────────────────────── */
   private clock = new THREE.Clock();
@@ -767,46 +765,13 @@ export class GameManager {
       // ── POSE RETARGETING: aplica os landmarks do MediaPipe no avatar do JOGADOR ──
       // O avatar do jogador é sempre o runner[1] (lane do meio).
       // Quando a câmera está ativa e detectou landmarks, o avatar espelha o corpo real.
-      if (!d.isAI) {
-        if (this.latestLandmarks && this.latestLandmarks.length >= 17) {
-          this.avatarAnimator.applyPoseLandmarks(runner.parts, this.latestLandmarks as any, runner.animState.mode);
-        }
-        const gestures = this.poseTracker.getHandGestures();
-        this.avatarAnimator.applyHandGestures(runner.parts, gestures);
-        this.checkGesturePopup(gestures);
+      if (!d.isAI && this.latestLandmarks && this.latestLandmarks.length >= 17) {
+        this.avatarAnimator.applyPoseLandmarks(runner.parts, this.latestLandmarks as any, runner.animState.mode);
       }
     }
 
     // Update hurdle physics
     this.hurdleSystem.update(dt);
-  }
-
-  private checkGesturePopup(gestures: any): void {
-    const leftG = gestures.leftHand?.gesture;
-    const rightG = gestures.rightHand?.gesture;
-    const activeGesture = (leftG && leftG !== 'Custom' && leftG !== 'None') ? leftG : ((rightG && rightG !== 'Custom' && rightG !== 'None') ? rightG : null);
-    if (!activeGesture) return;
-
-    const now = performance.now();
-    if (now - this.lastGestureTime < 1800 && this.lastShownGesture === activeGesture) return;
-
-    const gestureLabels: Record<string, { text: string; style: 'perfect' | 'turbo' | 'stumble' }> = {
-      'Middle_Finger': { text: '🖕 PITOCO!', style: 'turbo' },
-      'Thumb_Up':      { text: '👍 BELEZA!', style: 'perfect' },
-      'Victory':       { text: '✌️ VITÓRIA!', style: 'perfect' },
-      'Pointing_Up':   { text: '☝️ AÍ SIM!', style: 'perfect' },
-      'Rock':          { text: '🤘 ROCK!', style: 'turbo' },
-      'Hang_Loose':    { text: '🤙 SHAKA!', style: 'perfect' },
-      'Closed_Fist':   { text: '✊ FORÇA!', style: 'turbo' },
-      'Open_Palm':     { text: '🖐️ TCHAU!', style: 'perfect' },
-    };
-
-    const info = gestureLabels[activeGesture];
-    if (info) {
-      this.popups.show(info.text, info.style);
-      this.lastGestureTime = now;
-      this.lastShownGesture = activeGesture;
-    }
   }
 
   /* ═══════════════════════════════════════════════════════ *

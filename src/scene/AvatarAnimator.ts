@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import type { AvatarParts, HandFingerBones } from './AvatarBuilder';
-import type { HandGesturesResult, FingerCurls } from '../tracking/PoseTracker';
+import type { AvatarParts } from './AvatarBuilder';
 
 export interface AnimState {
     mode: 'idle' | 'run' | 'jump' | 'stumble' | 'celebrate';
@@ -181,98 +180,6 @@ export class AvatarAnimator {
     }
 
     /**
-     * CONTROLE DINÂMICO DOS DEDOS E GESTOS (Beleza 👍, Pitoco 🖕, Vitória ✌️, etc.)
-     * Espelho natural 1:1:
-     * Mão esquerda do jogador -> Mão na esquerda da tela (parts.rightFingers)
-     * Mão direita do jogador -> Mão na direita da tela (parts.leftFingers)
-     */
-    public applyHandGestures(parts: AvatarParts, gestures: HandGesturesResult): void {
-        if (!parts.isGLTF) return;
-
-        // Mão esquerda do jogador (tela esquerda)
-        if (parts.rightFingers) {
-            const curls = gestures.leftHand?.curls ?? {
-                thumb: 0.25,
-                index: 0.35,
-                middle: 0.35,
-                ring: 0.35,
-                pinky: 0.35
-            };
-            this.animateHandFingers(parts.rightFingers, curls, false);
-        }
-
-        // Mão direita do jogador (tela direita)
-        if (parts.leftFingers) {
-            const curls = gestures.rightHand?.curls ?? {
-                thumb: 0.25,
-                index: 0.35,
-                middle: 0.35,
-                ring: 0.35,
-                pinky: 0.35
-            };
-            this.animateHandFingers(parts.leftFingers, curls, true);
-        }
-    }
-
-    private animateHandFingers(fingers: HandFingerBones, curls: FingerCurls, isScreenRight: boolean): void {
-        const prefix = isScreenRight ? 'r_' : 'l_';
-
-        // Thumb (Polegar)
-        if (fingers.thumb.length > 0) {
-            const smoothThumb = this.smooth(`${prefix}thumb`, curls.thumb, 0.45);
-            fingers.thumb.forEach((bone, idx) => {
-                const initQ = (bone as any).userData?.initialQuaternion as THREE.Quaternion | undefined;
-                if (!initQ) return;
-                let deltaQ: THREE.Quaternion;
-                if (idx === 0) {
-                    const foldZ = isScreenRight ? smoothThumb * 0.35 : -smoothThumb * 0.35;
-                    deltaQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(smoothThumb * 0.30, 0, foldZ));
-                } else if (idx === 1) {
-                    deltaQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothThumb * 0.60);
-                } else {
-                    deltaQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothThumb * 0.75);
-                }
-                bone.quaternion.copy(initQ).multiply(deltaQ);
-            });
-        }
-
-        // Index (Indicador)
-        if (fingers.index.length > 0) {
-            const smoothIndex = this.smooth(`${prefix}index`, curls.index, 0.45);
-            this.applyFingerBones(fingers.index, smoothIndex);
-        }
-
-        // Middle (Médio - PITOCO / DEDO DO MEIO 🖕)
-        if (fingers.middle.length > 0) {
-            const smoothMiddle = this.smooth(`${prefix}middle`, curls.middle, 0.45);
-            this.applyFingerBones(fingers.middle, smoothMiddle);
-        }
-
-        // Ring (Anelar)
-        if (fingers.ring.length > 0) {
-            const smoothRing = this.smooth(`${prefix}ring`, curls.ring, 0.45);
-            this.applyFingerBones(fingers.ring, smoothRing);
-        }
-
-        // Pinky (Mindinho)
-        if (fingers.pinky.length > 0) {
-            const smoothPinky = this.smooth(`${prefix}pinky`, curls.pinky, 0.45);
-            this.applyFingerBones(fingers.pinky, smoothPinky);
-        }
-    }
-
-    private applyFingerBones(bones: THREE.Object3D[], curl: number): void {
-        const bendAngles = [1.05, 1.30, 0.80];
-        bones.forEach((bone, idx) => {
-            const initQ = (bone as any).userData?.initialQuaternion as THREE.Quaternion | undefined;
-            if (!initQ) return;
-            const angle = curl * (bendAngles[idx] ?? 1.0);
-            const deltaQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
-            bone.quaternion.copy(initQ).multiply(deltaQ);
-        });
-    }
-
-    /**
      * POSE RETARGETING — Espelho Natural 1:1.
      * Mão DIREITA do jogador → Braço na DIREITA da tela.
      * Mão ESQUERDA do jogador → Braço na ESQUERDA da tela.
@@ -285,30 +192,11 @@ export class AvatarAnimator {
     ): void {
         if (!landmarks || landmarks.length < 17) return;
 
-        // Em salto ou tropeço, mantém a física e acrobacia do jogo
-        if (mode === 'jump' || mode === 'stumble') return;
+        // Em salto ou tropeço, mantém a animação acrobática/física do jogo
+        if (mode === 'jump' || mode === 'stumble' || (parts.isGLTF && mode === 'run')) return;
 
         const vis = (idx: number) => landmarks[idx]?.visibility ?? 0;
         const pt  = (idx: number) => landmarks[idx];
-
-        // ── Se estiver correndo no modelo GLTF: permite erguer mãos e acenar em movimento ──
-        if (parts.isGLTF && mode === 'run') {
-            const l_s = pt(LM.L_SHOULDER), l_e = pt(LM.L_ELBOW), l_w = pt(LM.L_WRIST);
-            const r_s = pt(LM.R_SHOULDER), r_e = pt(LM.R_ELBOW), r_w = pt(LM.R_WRIST);
-
-            const isLeftHandUp = l_w && l_s && (l_w.y < l_s.y + 0.10);
-            const isRightHandUp = r_w && r_s && (r_w.y < r_s.y + 0.10);
-
-            if (isLeftHandUp && l_s && l_e && vis(LM.L_SHOULDER) > 0.25 && vis(LM.L_ELBOW) > 0.25) {
-                this.applyBonePose(parts.rightUpperArm, -1.2, 0.4, 0);
-                this.applyForearmPose(parts.rightForearm, -1.35, (l_w.x - l_e.x) * 4.0);
-            }
-            if (isRightHandUp && r_s && r_e && vis(LM.R_SHOULDER) > 0.25 && vis(LM.R_ELBOW) > 0.25) {
-                this.applyBonePose(parts.leftUpperArm, -1.2, -0.4, 0);
-                this.applyForearmPose(parts.leftForearm, -1.35, (r_w.x - r_e.x) * 4.0);
-            }
-            return;
-        }
 
         // ── TORSO ──
         const ls = pt(LM.L_SHOULDER), rs = pt(LM.R_SHOULDER);
