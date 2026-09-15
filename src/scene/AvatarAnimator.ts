@@ -147,6 +147,44 @@ export class AvatarAnimator {
      * Landmarks do Google MediaPipe → Rotações dos ossos limitadas a ângulos permitidos.
      * Responde instantaneamente em tempo real a gestos, acenos ("dar tchau") e balanços.
      */
+    private applyBonePose(
+        bone: THREE.Object3D,
+        deltaX: number,
+        deltaY: number,
+        deltaZ: number
+    ): void {
+        const initQ = (bone as any).userData?.initialQuaternion as THREE.Quaternion | undefined;
+        if (initQ) {
+            const deltaQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(deltaX, deltaY, deltaZ, 'ZXY'));
+            bone.quaternion.copy(initQ).multiply(deltaQ);
+        } else {
+            bone.rotation.x = deltaX;
+            bone.rotation.y = deltaY;
+            bone.rotation.z = deltaZ;
+        }
+    }
+
+    private applyForearmPose(
+        forearm: THREE.Object3D,
+        elbowBend: number,
+        waveZ: number
+    ): void {
+        const initQ = (forearm as any).userData?.initialQuaternion as THREE.Quaternion | undefined;
+        if (initQ) {
+            const deltaQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(elbowBend, waveZ * 0.7, waveZ, 'XYZ'));
+            forearm.quaternion.copy(initQ).multiply(deltaQ);
+        } else {
+            forearm.rotation.x = elbowBend;
+            forearm.rotation.z = waveZ;
+        }
+    }
+
+    /**
+     * POSE RETARGETING — Espelho Natural 1:1.
+     * Mão DIREITA do jogador → Braço na DIREITA da tela.
+     * Mão ESQUERDA do jogador → Braço na ESQUERDA da tela.
+     * Suporta acenos ("dar tchau"), comemoração e corrida sem travar nem distorcer.
+     */
     public applyPoseLandmarks(
         parts: AvatarParts,
         landmarks: { x: number; y: number; visibility?: number }[],
@@ -154,13 +192,13 @@ export class AvatarAnimator {
     ): void {
         if (!landmarks || landmarks.length < 17) return;
 
-        // Em salto, tropeço ou corrida GLTF, mantém a animação acrobática/mocap pura do jogo
+        // Em salto ou tropeço, mantém a animação acrobática/física do jogo
         if (mode === 'jump' || mode === 'stumble' || (parts.isGLTF && mode === 'run')) return;
 
         const vis = (idx: number) => landmarks[idx]?.visibility ?? 0;
         const pt  = (idx: number) => landmarks[idx];
 
-        // ── TORSO: inclinação lateral e frente/trás rigorosamente limitadas ──
+        // ── TORSO ──
         const ls = pt(LM.L_SHOULDER), rs = pt(LM.R_SHOULDER);
         const lh = pt(LM.L_HIP),      rh = pt(LM.R_HIP);
         if (ls && rs && vis(LM.L_SHOULDER) > 0.25 && vis(LM.R_SHOULDER) > 0.25) {
@@ -178,7 +216,7 @@ export class AvatarAnimator {
             }
         }
 
-        // ── CABEÇA: rotação lateral limitada ──
+        // ── CABEÇA ──
         const nose = pt(LM.NOSE);
         if (nose && ls && rs && vis(LM.NOSE) > 0.25) {
             const shoulderCenterX = (ls.x + rs.x) / 2;
@@ -187,67 +225,73 @@ export class AvatarAnimator {
             parts.head.rotation.y = this.smooth('headY', clampedHeadYaw);
         }
 
-        // ── BRAÇO ESQUERDO DO JOGADOR → BRAÇO ESQUERDO DO BONECO (lado esquerdo da tela) ──
+        // ── BRAÇO ESQUERDO DO JOGADOR → BRAÇO NA ESQUERDA DA TELA (parts.rightUpperArm) ──
         const le = pt(LM.L_ELBOW), lw = pt(LM.L_WRIST);
         if (ls && le && vis(LM.L_SHOULDER) > 0.25 && vis(LM.L_ELBOW) > 0.25) {
             const lWristVis = lw && vis(LM.L_WRIST) > 0.25;
             const targetY = lWristVis ? lw.y : le.y;
             const elevation = (ls.y - targetY);
 
-            const rawArmElevationX = -elevation * 4.0;
+            const rawArmElevationX = -elevation * 3.8;
             const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
             const spreadDistance = Math.abs((lWristVis ? lw.x : le.x) - ls.x);
-            const clampedArmSpreadZ = THREE.MathUtils.clamp(spreadDistance * 3.0, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
+            const clampedArmSpreadZ = THREE.MathUtils.clamp(spreadDistance * 2.8, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
-            parts.leftUpperArm.rotation.x = this.smooth('screenLeftArmX', clampedArmElevationX);
-            parts.leftUpperArm.rotation.z = this.smooth('screenLeftArmZ', clampedArmSpreadZ);
+            const smoothElevX = this.smooth('screenLeftArmX', clampedArmElevationX);
+            const smoothSpreadZ = this.smooth('screenLeftArmZ', clampedArmSpreadZ);
+            this.applyBonePose(parts.rightUpperArm, smoothElevX, smoothSpreadZ, 0);
 
             if (lWristVis) {
-                const elbowBend = (lw.y - le.y) * 3.5 - 0.4;
-                const clampedElbow = THREE.MathUtils.clamp(elbowBend, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
-                parts.leftForearm.rotation.x = this.smooth('screenLeftForeArmX', clampedElbow);
+                // Se a mão está erguida: flexiona cotovelo e permite dar tchau
+                const isHandUp = lw.y < ls.y + 0.05;
+                const elbowBend = isHandUp ? -1.35 : THREE.MathUtils.clamp((lw.y - le.y) * 3.2 - 0.3, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
+                // Movimento lateral do aceno ("Dar Tchau")
+                const waveDiff = (lw.x - le.x) * 4.2;
+                const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.2, 1.2);
 
-                // Movimento lateral do antebraço (Acenar / Dar Tchau com a mão esquerda)
-                const waveDiff = (lw.x - le.x) * 3.5;
-                const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.3, 1.3);
-                parts.leftForearm.rotation.z = this.smooth('screenLeftForeArmZ', clampedWaveZ);
+                const smoothElbow = this.smooth('screenLeftForeArmX', elbowBend);
+                const smoothWave = this.smooth('screenLeftForeArmZ', clampedWaveZ);
+                this.applyForearmPose(parts.rightForearm, smoothElbow, smoothWave);
             }
         }
 
-        // ── BRAÇO DIREITO DO JOGADOR → BRAÇO DIREITO DO BONECO (lado direito da tela) ──
+        // ── BRAÇO DIREITO DO JOGADOR → BRAÇO NA DIREITA DA TELA (parts.leftUpperArm) ──
         const re = pt(LM.R_ELBOW), rw = pt(LM.R_WRIST);
         if (rs && re && vis(LM.R_SHOULDER) > 0.25 && vis(LM.R_ELBOW) > 0.25) {
             const rWristVis = rw && vis(LM.R_WRIST) > 0.25;
             const targetY = rWristVis ? rw.y : re.y;
             const elevation = (rs.y - targetY);
 
-            const rawArmElevationX = -elevation * 4.0;
+            const rawArmElevationX = -elevation * 3.8;
             const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
             const spreadDistance = Math.abs((rWristVis ? rw.x : re.x) - rs.x);
-            const clampedArmSpreadZ = -THREE.MathUtils.clamp(spreadDistance * 3.0, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
+            const clampedArmSpreadZ = -THREE.MathUtils.clamp(spreadDistance * 2.8, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
-            parts.rightUpperArm.rotation.x = this.smooth('screenRightArmX', clampedArmElevationX);
-            parts.rightUpperArm.rotation.z = this.smooth('screenRightArmZ', clampedArmSpreadZ);
+            const smoothElevX = this.smooth('screenRightArmX', clampedArmElevationX);
+            const smoothSpreadZ = this.smooth('screenRightArmZ', clampedArmSpreadZ);
+            this.applyBonePose(parts.leftUpperArm, smoothElevX, smoothSpreadZ, 0);
 
             if (rWristVis) {
-                const elbowBend = (rw.y - re.y) * 3.5 - 0.4;
-                const clampedElbow = THREE.MathUtils.clamp(elbowBend, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
-                parts.rightForearm.rotation.x = this.smooth('screenRightForeArmX', clampedElbow);
+                // Se a mão está erguida: flexiona cotovelo e permite dar tchau
+                const isHandUp = rw.y < rs.y + 0.05;
+                const elbowBend = isHandUp ? -1.35 : THREE.MathUtils.clamp((rw.y - re.y) * 3.2 - 0.3, ANGLE_LIMITS.ELBOW_FLEX_MAX, ANGLE_LIMITS.ELBOW_FLEX_MIN);
+                // Movimento lateral do aceno ("Dar Tchau")
+                const waveDiff = (rw.x - re.x) * 4.2;
+                const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.2, 1.2);
 
-                // Movimento lateral do antebraço (Acenar / Dar Tchau com a mão direita)
-                const waveDiff = (rw.x - re.x) * 3.5;
-                const clampedWaveZ = THREE.MathUtils.clamp(waveDiff, -1.3, 1.3);
-                parts.rightForearm.rotation.z = this.smooth('screenRightForeArmZ', clampedWaveZ);
+                const smoothElbow = this.smooth('screenRightForeArmX', elbowBend);
+                const smoothWave = this.smooth('screenRightForeArmZ', clampedWaveZ);
+                this.applyForearmPose(parts.leftForearm, smoothElbow, smoothWave);
             }
         }
 
-        // ── PERNAS: Espelhamento natural e controle estrito por elevação real dos joelhos ──
+        // ── PERNAS: Espelhamento natural (Pernas só se movem por elevação real dos joelhos) ──
         const lk = pt(LM.L_KNEE), rk = pt(LM.R_KNEE);
         const lKneeVis = lk && vis(LM.L_KNEE) > 0.25;
         const rKneeVis = rk && vis(LM.R_KNEE) > 0.25;
 
         if (lKneeVis || rKneeVis) {
-            // Perna esquerda do jogador -> Perna na esquerda da tela (parts.leftThigh)
+            // Perna esquerda do jogador -> Perna na esquerda da tela (parts.rightThigh)
             if (lKneeVis && lh) {
                 const lDist = lk.y - lh.y;
                 const lLift = Math.max(0, 0.22 - lDist);
@@ -256,14 +300,14 @@ export class AvatarAnimator {
                 const rawShinAngle = lLift * 6.5;
                 const clampedShin = THREE.MathUtils.clamp(rawShinAngle, ANGLE_LIMITS.KNEE_FLEX_MIN, ANGLE_LIMITS.KNEE_FLEX_MAX);
 
-                parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', clampedThigh, 0.35);
-                parts.leftShin.rotation.x = this.smooth('screenLeftShinX', clampedShin, 0.35);
+                this.applyBonePose(parts.rightThigh, this.smooth('screenLeftThighX', clampedThigh, 0.35), 0, 0);
+                this.applyBonePose(parts.rightShin, this.smooth('screenLeftShinX', clampedShin, 0.35), 0, 0);
             } else {
-                parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.25);
-                parts.leftShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.25);
+                this.applyBonePose(parts.rightThigh, this.smooth('screenLeftThighX', 0, 0.25), 0, 0);
+                this.applyBonePose(parts.rightShin, this.smooth('screenLeftShinX', 0, 0.25), 0, 0);
             }
 
-            // Perna direita do jogador -> Perna na direita da tela (parts.rightThigh)
+            // Perna direita do jogador -> Perna na direita da tela (parts.leftThigh)
             if (rKneeVis && rh) {
                 const rDist = rk.y - rh.y;
                 const rLift = Math.max(0, 0.22 - rDist);
@@ -272,18 +316,18 @@ export class AvatarAnimator {
                 const rawShinAngle = rLift * 6.5;
                 const clampedShin = THREE.MathUtils.clamp(rawShinAngle, ANGLE_LIMITS.KNEE_FLEX_MIN, ANGLE_LIMITS.KNEE_FLEX_MAX);
 
-                parts.rightThigh.rotation.x = this.smooth('screenRightThighX', clampedThigh, 0.35);
-                parts.rightShin.rotation.x = this.smooth('screenRightShinX', clampedShin, 0.35);
+                this.applyBonePose(parts.leftThigh, this.smooth('screenRightThighX', clampedThigh, 0.35), 0, 0);
+                this.applyBonePose(parts.leftShin, this.smooth('screenRightShinX', clampedShin, 0.35), 0, 0);
             } else {
-                parts.rightThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.25);
-                parts.rightShin.rotation.x = this.smooth('screenRightShinX', 0, 0.25);
+                this.applyBonePose(parts.leftThigh, this.smooth('screenRightThighX', 0, 0.25), 0, 0);
+                this.applyBonePose(parts.leftShin, this.smooth('screenRightShinX', 0, 0.25), 0, 0);
             }
         } else {
-            // Pernas não visíveis na câmera: repouso absoluto, nunca balança sozinho
-            parts.leftThigh.rotation.x = this.smooth('screenLeftThighX', 0, 0.3);
-            parts.rightThigh.rotation.x = this.smooth('screenRightThighX', 0, 0.3);
-            parts.leftShin.rotation.x = this.smooth('screenLeftShinX', 0, 0.3);
-            parts.rightShin.rotation.x = this.smooth('screenRightShinX', 0, 0.3);
+            // Pernas não visíveis na câmera: repouso absoluto
+            this.applyBonePose(parts.rightThigh, this.smooth('screenLeftThighX', 0, 0.3), 0, 0);
+            this.applyBonePose(parts.leftThigh, this.smooth('screenRightThighX', 0, 0.3), 0, 0);
+            this.applyBonePose(parts.rightShin, this.smooth('screenLeftShinX', 0, 0.3), 0, 0);
+            this.applyBonePose(parts.leftShin, this.smooth('screenRightShinX', 0, 0.3), 0, 0);
         }
     }
 

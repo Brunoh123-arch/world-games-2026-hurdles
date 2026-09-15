@@ -250,7 +250,7 @@ export class GameManager {
 
       case GameState.RACING:
         this.hud.show();
-        this.cameraFeed.showPiP();
+        this.cameraFeed.hidePiP();
         this.raceTime = 0;
         this.raceFinished = false;
         this.finishedRunners = 0;

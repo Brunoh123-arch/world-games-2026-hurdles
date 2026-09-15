@@ -88,20 +88,29 @@ export class AvatarBuilder {
         const torso = findBone('Spine1') || findBone('Spine');
         const chest = findBone('Spine2') || torso;
 
-        // Espelho natural da câmera:
-        // No modelo 3D visto de trás, LeftArm (x > 0) está no lado DIREITO da tela
-        // e RightArm (x < 0) está no lado ESQUERDO da tela.
-        // Mapeamos para que braço ESQUERDO do jogador controle o braço ESQUERDO da tela (RightArm):
-        const leftUpperArm = findBone('RightArm');
-        const leftForearm = findBone('RightForeArm');
-        const rightUpperArm = findBone('LeftArm');
-        const rightForearm = findBone('LeftForeArm');
-        const leftThigh = findBone('RightUpLeg');
-        const leftShin = findBone('RightLeg');
-        const rightThigh = findBone('LeftUpLeg');
-        const rightShin = findBone('LeftLeg');
+        // Mapeamento anatômico natural dos ossos
+        const leftUpperArm = findBone('LeftArm');
+        const leftForearm = findBone('LeftForeArm');
+        const rightUpperArm = findBone('RightArm');
+        const rightForearm = findBone('RightForeArm');
+        const leftThigh = findBone('LeftUpLeg');
+        const leftShin = findBone('LeftLeg');
+        const rightThigh = findBone('RightUpLeg');
+        const rightShin = findBone('RightLeg');
         const leftFoot = findBone('LeftFoot');
         const rightFoot = findBone('RightFoot');
+
+        // Salva as rotações de repouso originais para permitir retargeting perfeito e dar tchau sem distorção
+        const bonesToTrack = [
+            head, torso, chest,
+            leftUpperArm, leftForearm, rightUpperArm, rightForearm,
+            leftThigh, leftShin, rightThigh, rightShin, leftFoot, rightFoot
+        ];
+        for (const b of bonesToTrack) {
+            if (b) {
+                b.userData.initialQuaternion = b.quaternion.clone();
+            }
+        }
 
         // Cores personalizadas do país no uniforme e sapatilhas
         group.traverse((child) => {
