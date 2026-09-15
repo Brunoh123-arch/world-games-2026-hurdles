@@ -3,6 +3,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Country } from '../types';
 
+export interface HandFingerBones {
+    thumb: THREE.Object3D[];
+    index: THREE.Object3D[];
+    middle: THREE.Object3D[];
+    ring: THREE.Object3D[];
+    pinky: THREE.Object3D[];
+}
+
 export interface AvatarParts {
     head: THREE.Object3D;
     torso: THREE.Object3D;
@@ -16,6 +24,8 @@ export interface AvatarParts {
     rightShin: THREE.Object3D;
     leftFoot: THREE.Object3D;
     rightFoot: THREE.Object3D;
+    leftFingers?: HandFingerBones;
+    rightFingers?: HandFingerBones;
     mixer?: THREE.AnimationMixer;
     actions?: { run?: THREE.AnimationAction; idle?: THREE.AnimationAction; };
     isGLTF?: boolean;
@@ -61,7 +71,9 @@ export class AvatarBuilder {
         const tracks: THREE.KeyframeTrack[] = [];
         for (const track of sourceClip.tracks) {
             const newTrackName = track.name.replace(/^mixamorig:/, '').replace(/^.*mixamorig:/, '');
-            if (newTrackName.endsWith('.quaternion')) {
+            // Não inclui trilhas dos dedos para permitir controle dinâmico total (joinha, pitoco, etc.)
+            const isFingerTrack = /Thumb|Index|Middle|Ring|Pinky/i.test(newTrackName);
+            if (!isFingerTrack && newTrackName.endsWith('.quaternion')) {
                 const newTrack = track.clone();
                 newTrack.name = newTrackName;
                 tracks.push(newTrack);
@@ -100,15 +112,39 @@ export class AvatarBuilder {
         const leftFoot = findBone('LeftFoot');
         const rightFoot = findBone('RightFoot');
 
-        // Salva as rotações de repouso originais para permitir retargeting perfeito e dar tchau sem distorção
+        // Mapeamento completo dos ossos dos 5 dedos para ambas as mãos
+        const getFingers = (prefix: 'Left' | 'Right'): HandFingerBones => ({
+            thumb: [findBone(`${prefix}HandThumb1`), findBone(`${prefix}HandThumb2`), findBone(`${prefix}HandThumb3`)].filter(b => b !== group),
+            index: [findBone(`${prefix}HandIndex1`), findBone(`${prefix}HandIndex2`), findBone(`${prefix}HandIndex3`)].filter(b => b !== group),
+            middle: [findBone(`${prefix}HandMiddle1`), findBone(`${prefix}HandMiddle2`), findBone(`${prefix}HandMiddle3`)].filter(b => b !== group),
+            ring: [findBone(`${prefix}HandRing1`), findBone(`${prefix}HandRing2`), findBone(`${prefix}HandRing3`)].filter(b => b !== group),
+            pinky: [findBone(`${prefix}HandPinky1`), findBone(`${prefix}HandPinky2`), findBone(`${prefix}HandPinky3`)].filter(b => b !== group)
+        });
+
+        const leftFingers = getFingers('Left');
+        const rightFingers = getFingers('Right');
+
+        // Salva as rotações de repouso originais para permitir retargeting perfeito, acenos e gestos sem distorção
         const bonesToTrack = [
             head, torso, chest,
             leftUpperArm, leftForearm, rightUpperArm, rightForearm,
             leftThigh, leftShin, rightThigh, rightShin, leftFoot, rightFoot
         ];
         for (const b of bonesToTrack) {
-            if (b) {
+            if (b && b !== group) {
                 b.userData.initialQuaternion = b.quaternion.clone();
+            }
+        }
+
+        // Salva rotações de repouso de cada junta dos 5 dedos
+        for (const fingerList of [
+            ...Object.values(leftFingers),
+            ...Object.values(rightFingers)
+        ]) {
+            for (const b of fingerList) {
+                if (b && b !== group) {
+                    b.userData.initialQuaternion = b.quaternion.clone();
+                }
             }
         }
 
@@ -160,6 +196,7 @@ export class AvatarBuilder {
                 leftThigh, leftShin,
                 rightThigh, rightShin,
                 leftFoot, rightFoot,
+                leftFingers, rightFingers,
                 mixer, actions,
                 isGLTF: true
             }
