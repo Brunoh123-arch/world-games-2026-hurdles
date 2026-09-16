@@ -60,7 +60,7 @@ export class AvatarBuilder {
     private retargetClip(sourceClip: THREE.AnimationClip, name: string): THREE.AnimationClip {
         const tracks: THREE.KeyframeTrack[] = [];
         for (const track of sourceClip.tracks) {
-            const newTrackName = track.name.replace(/^mixamorig:?/i, '');
+            const newTrackName = track.name.replace(/^mixamorig:/, '').replace(/^.*mixamorig:/, '');
             if (newTrackName.endsWith('.quaternion')) {
                 const newTrack = track.clone();
                 newTrack.name = newTrackName;
