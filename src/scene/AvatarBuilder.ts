@@ -23,8 +23,6 @@ export interface AvatarParts {
 
 export class AvatarBuilder {
     private templateScene: THREE.Group | null = null;
-    private runClip: THREE.AnimationClip | null = null;
-    private idleClip: THREE.AnimationClip | null = null;
     private isLoaded: boolean = false;
 
     public async init(): Promise<void> {
@@ -40,34 +38,12 @@ export class AvatarBuilder {
                 }
             });
 
-            // Carrega as animações de corrida e repouso com captura de movimento
-            const animGltf = await loader.loadAsync('/models/soldier.glb');
-            if (animGltf.animations && animGltf.animations.length > 0) {
-                const rawRun = animGltf.animations.find((a) => a.name === 'Run');
-                const rawIdle = animGltf.animations.find((a) => a.name === 'Idle');
-                if (rawRun) this.runClip = this.retargetClip(rawRun, 'Run');
-                if (rawIdle) this.idleClip = this.retargetClip(rawIdle, 'Idle');
-            }
-
             this.isLoaded = true;
             console.log('AvatarBuilder: Atleta 3D humano realista carregado com sucesso!');
         } catch (err) {
             console.warn('AvatarBuilder: Falha ao carregar modelo GLB, fallback procedural ativo:', err);
             this.isLoaded = false;
         }
-    }
-
-    private retargetClip(sourceClip: THREE.AnimationClip, name: string): THREE.AnimationClip {
-        const tracks: THREE.KeyframeTrack[] = [];
-        for (const track of sourceClip.tracks) {
-            const newTrackName = track.name.replace(/^mixamorig:/, '').replace(/^.*mixamorig:/, '');
-            if (newTrackName.endsWith('.quaternion')) {
-                const newTrack = track.clone();
-                newTrack.name = newTrackName;
-                tracks.push(newTrack);
-            }
-        }
-        return new THREE.AnimationClip(name, sourceClip.duration, tracks);
     }
 
     public createAvatar(country: Country): { group: THREE.Group; parts: AvatarParts } {
@@ -138,19 +114,6 @@ export class AvatarBuilder {
         bib.scale.set(0.85, 0.85, 0.85);
         chest.add(bib);
 
-        // Mixer de animação Mixamo mocap
-        const mixer = new THREE.AnimationMixer(group);
-        const actions: { run?: THREE.AnimationAction; idle?: THREE.AnimationAction } = {};
-        if (this.runClip) {
-            actions.run = mixer.clipAction(this.runClip);
-            actions.run.setLoop(THREE.LoopRepeat, Infinity);
-        }
-        if (this.idleClip) {
-            actions.idle = mixer.clipAction(this.idleClip);
-            actions.idle.setLoop(THREE.LoopRepeat, Infinity);
-            actions.idle.play();
-        }
-
         return {
             group,
             parts: {
@@ -160,7 +123,6 @@ export class AvatarBuilder {
                 leftThigh, leftShin,
                 rightThigh, rightShin,
                 leftFoot, rightFoot,
-                mixer, actions,
                 isGLTF: true
             }
         };
