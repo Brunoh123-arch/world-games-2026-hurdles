@@ -13,6 +13,9 @@ const LM = {
     L_SHOULDER: 11, R_SHOULDER: 12,
     L_ELBOW: 13,    R_ELBOW: 14,
     L_WRIST: 15,    R_WRIST: 16,
+    L_PINKY: 17,    R_PINKY: 18,
+    L_INDEX: 19,    R_INDEX: 20,
+    L_THUMB: 21,    R_THUMB: 22,
     L_HIP: 23,      R_HIP: 24,
     L_KNEE: 25,     R_KNEE: 26,
     L_ANKLE: 27,    R_ANKLE: 28,
@@ -128,6 +131,10 @@ export class AvatarAnimator {
         this.applyForearmPose(parts.leftForearm, -0.45, 0);
         this.applyForearmPose(parts.rightForearm, -0.45, 0);
 
+        // Mãos relaxadas em postura natural
+        this.applyHandPose(parts.leftHand, 0.1, 0, 0.05);
+        this.applyHandPose(parts.rightHand, 0.1, 0, -0.05);
+
         // Base atlética
         this.applyBonePose(parts.leftThigh, -0.04, 0, 0);
         this.applyBonePose(parts.rightThigh, 0.04, 0, 0);
@@ -169,6 +176,10 @@ export class AvatarAnimator {
         this.applyBonePose(parts.rightUpperArm, rightCycle * armAmp, -0.08, 0);
         this.applyForearmPose(parts.leftForearm, -0.85 + Math.sin(phase) * 0.2, 0);
         this.applyForearmPose(parts.rightForearm, -0.85 + Math.sin(phase + Math.PI) * 0.2, 0);
+
+        // Mãos atléticas com leve oscilação no ritmo da corrida
+        this.applyHandPose(parts.leftHand, 0.2 + Math.sin(phase) * 0.15, 0, 0);
+        this.applyHandPose(parts.rightHand, 0.2 + Math.sin(phase + Math.PI) * 0.15, 0, 0);
     }
 
     private animateAthleticJump(parts: AvatarParts, progress: number): void {
@@ -252,6 +263,24 @@ export class AvatarAnimator {
         }
     }
 
+    private applyHandPose(
+        hand: THREE.Object3D,
+        flexX: number,
+        twistY: number,
+        waveZ: number
+    ): void {
+        if (!hand) return;
+        const initQ = (hand as any).userData?.initialQuaternion as THREE.Quaternion | undefined;
+        if (initQ) {
+            const deltaQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(flexX, twistY, waveZ, 'ZXY'));
+            hand.quaternion.copy(initQ).multiply(deltaQ);
+        } else {
+            hand.rotation.x = flexX;
+            hand.rotation.y = twistY;
+            hand.rotation.z = waveZ;
+        }
+    }
+
     /**
      * POSE RETARGETING — Espelho Natural 1:1.
      * Mão DIREITA do jogador → Braço na DIREITA da tela.
@@ -324,6 +353,27 @@ export class AvatarAnimator {
                 const smoothElbow = this.smooth('screenLeftForeArmX', elbowBend);
                 const smoothWave = this.smooth('screenLeftForeArmZ', clampedWaveZ);
                 this.applyForearmPose(parts.rightForearm, smoothElbow, smoothWave);
+
+                // Rotação dinâmica da mão e punho (espelha inclinação, rotação e aceno dos dedos)
+                const li = pt(LM.L_INDEX), lp = pt(LM.L_PINKY);
+                if (li && vis(LM.L_INDEX) > 0.2) {
+                    const handDx = (li.x - lw.x) * 4.5;
+                    const handDy = (li.y - lw.y) * 3.0;
+                    const handWave = THREE.MathUtils.clamp(clampedWaveZ * 0.8 + handDx, -1.2, 1.2);
+                    const handFlex = THREE.MathUtils.clamp(-handDy - 0.2, -0.8, 0.8);
+                    let handTwist = 0;
+                    if (lp && vis(LM.L_PINKY) > 0.2) {
+                        handTwist = THREE.MathUtils.clamp((lp.x - li.x) * 4.5, -1.2, 1.2);
+                    }
+                    this.applyHandPose(
+                        parts.rightHand,
+                        this.smooth('screenLeftHandFlex', handFlex),
+                        this.smooth('screenLeftHandTwist', handTwist),
+                        this.smooth('screenLeftHandWave', handWave)
+                    );
+                } else {
+                    this.applyHandPose(parts.rightHand, 0, 0, smoothWave * 0.7);
+                }
             }
         }
 
@@ -354,6 +404,27 @@ export class AvatarAnimator {
                 const smoothElbow = this.smooth('screenRightForeArmX', elbowBend);
                 const smoothWave = this.smooth('screenRightForeArmZ', clampedWaveZ);
                 this.applyForearmPose(parts.leftForearm, smoothElbow, smoothWave);
+
+                // Rotação dinâmica da mão e punho (espelha inclinação, rotação e aceno dos dedos)
+                const ri = pt(LM.R_INDEX), rp = pt(LM.R_PINKY);
+                if (ri && vis(LM.R_INDEX) > 0.2) {
+                    const handDx = (ri.x - rw.x) * 4.5;
+                    const handDy = (ri.y - rw.y) * 3.0;
+                    const handWave = THREE.MathUtils.clamp(clampedWaveZ * 0.8 + handDx, -1.2, 1.2);
+                    const handFlex = THREE.MathUtils.clamp(-handDy - 0.2, -0.8, 0.8);
+                    let handTwist = 0;
+                    if (rp && vis(LM.R_PINKY) > 0.2) {
+                        handTwist = THREE.MathUtils.clamp((rp.x - ri.x) * 4.5, -1.2, 1.2);
+                    }
+                    this.applyHandPose(
+                        parts.leftHand,
+                        this.smooth('screenRightHandFlex', handFlex),
+                        this.smooth('screenRightHandTwist', handTwist),
+                        this.smooth('screenRightHandWave', handWave)
+                    );
+                } else {
+                    this.applyHandPose(parts.leftHand, 0, 0, smoothWave * 0.7);
+                }
             }
         }
 

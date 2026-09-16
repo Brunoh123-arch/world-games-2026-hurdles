@@ -8,8 +8,10 @@ export interface AvatarParts {
     torso: THREE.Object3D;
     leftUpperArm: THREE.Object3D;
     leftForearm: THREE.Object3D;
+    leftHand: THREE.Object3D;
     rightUpperArm: THREE.Object3D;
     rightForearm: THREE.Object3D;
+    rightHand: THREE.Object3D;
     leftThigh: THREE.Object3D;
     leftShin: THREE.Object3D;
     rightThigh: THREE.Object3D;
@@ -67,8 +69,10 @@ export class AvatarBuilder {
         // Mapeamento anatômico natural dos ossos
         const leftUpperArm = findBone('LeftArm');
         const leftForearm = findBone('LeftForeArm');
+        const leftHand = findBone('LeftHand');
         const rightUpperArm = findBone('RightArm');
         const rightForearm = findBone('RightForeArm');
+        const rightHand = findBone('RightHand');
         const leftThigh = findBone('LeftUpLeg');
         const leftShin = findBone('LeftLeg');
         const rightThigh = findBone('RightUpLeg');
@@ -76,10 +80,11 @@ export class AvatarBuilder {
         const leftFoot = findBone('LeftFoot');
         const rightFoot = findBone('RightFoot');
 
-        // Salva as rotações de repouso originais para permitir retargeting perfeito e dar tchau sem distorção
+        // Salva as rotações de repouso originais para permitir retargeting perfeito e rotação/aceno da mão
         const bonesToTrack = [
             head, torso, chest,
-            leftUpperArm, leftForearm, rightUpperArm, rightForearm,
+            leftUpperArm, leftForearm, leftHand,
+            rightUpperArm, rightForearm, rightHand,
             leftThigh, leftShin, rightThigh, rightShin, leftFoot, rightFoot
         ];
         for (const b of bonesToTrack) {
@@ -118,8 +123,8 @@ export class AvatarBuilder {
             group,
             parts: {
                 head, torso,
-                leftUpperArm, leftForearm,
-                rightUpperArm, rightForearm,
+                leftUpperArm, leftForearm, leftHand,
+                rightUpperArm, rightForearm, rightHand,
                 leftThigh, leftShin,
                 rightThigh, rightShin,
                 leftFoot, rightFoot,
@@ -189,8 +194,8 @@ export class AvatarBuilder {
             group,
             parts: {
                 head: headGroup, torso: torsoGroup,
-                leftUpperArm: lUA, leftForearm: lFA,
-                rightUpperArm: rUA, rightForearm: rFA,
+                leftUpperArm: lUA, leftForearm: lFA, leftHand: new THREE.Group(),
+                rightUpperArm: rUA, rightForearm: rFA, rightHand: new THREE.Group(),
                 leftThigh: lTh, leftShin: lSh,
                 rightThigh: rTh, rightShin: rSh,
                 leftFoot: lF, rightFoot: rF,
