@@ -131,9 +131,9 @@ export class AvatarAnimator {
         this.applyForearmPose(parts.leftForearm, -0.35, 0);
         this.applyForearmPose(parts.rightForearm, -0.35, 0);
 
-        // Mãos relaxadas em postura natural
-        this.applyHandPose(parts.leftHand, 0.1, 0, 0.05);
-        this.applyHandPose(parts.rightHand, 0.1, 0, -0.05);
+        // Mãos retas e naturais alinhadas ao antebraço (zero distorção)
+        this.applyHandPose(parts.leftHand, 0, 0, 0);
+        this.applyHandPose(parts.rightHand, 0, 0, 0);
 
         // Base atlética com leve flexão de joelho natural (positivo = flexão anatômica para trás)
         this.applyBonePose(parts.leftThigh, 0.02, 0, 0);
@@ -182,9 +182,9 @@ export class AvatarAnimator {
         this.applyForearmPose(parts.leftForearm, -0.85 + Math.sin(phase) * 0.25, 0);
         this.applyForearmPose(parts.rightForearm, -0.85 + Math.sin(phase + Math.PI) * 0.25, 0);
 
-        // Mãos atléticas com leve oscilação no ritmo da corrida
-        this.applyHandPose(parts.leftHand, 0.15 + Math.sin(phase) * 0.1, 0, 0);
-        this.applyHandPose(parts.rightHand, 0.15 + Math.sin(phase + Math.PI) * 0.1, 0, 0);
+        // Mãos retas alinhadas aos antebraços durante a corrida
+        this.applyHandPose(parts.leftHand, 0, 0, 0);
+        this.applyHandPose(parts.rightHand, 0, 0, 0);
     }
 
     private animateAthleticJump(parts: AvatarParts, progress: number): void {
@@ -368,42 +368,14 @@ export class AvatarAnimator {
                 const smoothWave = this.smooth('screenLeftForeArmZ', clampedWaveZ);
                 this.applyForearmPose(parts.rightForearm, smoothElbow, smoothWave);
 
-                // ── ROTAÇÃO E ACENO DA MÃO / PUNHO ──
-                let handWave = 0;
-                let handTwist = 0;
-                let handFlex = 0;
-
-                const li = pt(LM.L_INDEX), lt = pt(LM.L_THUMB), lp = pt(LM.L_PINKY);
-                if (li && vis(LM.L_INDEX) > 0.15) {
-                    const handDx = li.x - lw.x;
-                    const handDy = li.y - lw.y;
-                    const handLen = Math.max(0.015, Math.hypot(handDx, handDy));
-
-                    // Flexão do punho (cima / baixo)
-                    handFlex = THREE.MathUtils.clamp(-handDy / handLen * 0.4 - 0.1, -0.6, 0.6);
-
-                    // Desvio lateral do punho (aceno relativo entre mão e antebraço)
-                    const forearmDx = lw.x - le.x;
-                    const forearmDy = lw.y - le.y;
-                    const handAngle = Math.atan2(handDy, handDx);
-                    const forearmAngle = Math.atan2(forearmDy, forearmDx);
-                    let diffAngle = handAngle - forearmAngle;
-                    while (diffAngle > Math.PI) diffAngle -= 2 * Math.PI;
-                    while (diffAngle < -Math.PI) diffAngle += 2 * Math.PI;
-                    handWave = THREE.MathUtils.clamp(diffAngle * 0.6, -0.6, 0.6);
-
-                    // Rotação da mão (girar a palma / pronação / supinação)
-                    if (lt && lp && vis(LM.L_THUMB) > 0.15 && vis(LM.L_PINKY) > 0.15) {
-                        const palmSpan = (lt.x - lp.x) / handLen;
-                        handTwist = THREE.MathUtils.clamp(palmSpan * 1.8, -1.4, 1.4);
-                    }
-                }
-
+                // ── MÃO E PUNHO: naturalmente retos e alinhados com o antebraço ──
+                // O antebraço já realiza o movimento principal. O punho tem apenas um suave amortecimento (sem entortar)
+                const subtleWaveZ = THREE.MathUtils.clamp(smoothWave * 0.18, -0.18, 0.18);
                 this.applyHandPose(
                     parts.rightHand,
-                    this.smooth('screenLeftHandFlex', handFlex, 0.35),
-                    this.smooth('screenLeftHandTwist', handTwist, 0.35),
-                    this.smooth('screenLeftHandWave', handWave, 0.35)
+                    0,
+                    0,
+                    this.smooth('screenLeftHandWave', subtleWaveZ, 0.35)
                 );
             }
         }
@@ -438,42 +410,14 @@ export class AvatarAnimator {
                 const smoothWave = this.smooth('screenRightForeArmZ', clampedWaveZ);
                 this.applyForearmPose(parts.leftForearm, smoothElbow, smoothWave);
 
-                // ── ROTAÇÃO E ACENO DA MÃO / PUNHO ──
-                let handWave = 0;
-                let handTwist = 0;
-                let handFlex = 0;
-
-                const ri = pt(LM.R_INDEX), rt = pt(LM.R_THUMB), rp = pt(LM.R_PINKY);
-                if (ri && vis(LM.R_INDEX) > 0.15) {
-                    const handDx = ri.x - rw.x;
-                    const handDy = ri.y - rw.y;
-                    const handLen = Math.max(0.015, Math.hypot(handDx, handDy));
-
-                    // Flexão do punho (cima / baixo)
-                    handFlex = THREE.MathUtils.clamp(-handDy / handLen * 0.4 - 0.1, -0.6, 0.6);
-
-                    // Desvio lateral do punho (aceno relativo entre mão e antebraço)
-                    const forearmDx = rw.x - re.x;
-                    const forearmDy = rw.y - re.y;
-                    const handAngle = Math.atan2(handDy, handDx);
-                    const forearmAngle = Math.atan2(forearmDy, forearmDx);
-                    let diffAngle = handAngle - forearmAngle;
-                    while (diffAngle > Math.PI) diffAngle -= 2 * Math.PI;
-                    while (diffAngle < -Math.PI) diffAngle += 2 * Math.PI;
-                    handWave = THREE.MathUtils.clamp(diffAngle * 0.6, -0.6, 0.6);
-
-                    // Rotação da mão (girar a palma / pronação / supinação)
-                    if (rt && rp && vis(LM.R_THUMB) > 0.15 && vis(LM.R_PINKY) > 0.15) {
-                        const palmSpan = (rt.x - rp.x) / handLen;
-                        handTwist = THREE.MathUtils.clamp(palmSpan * 1.8, -1.4, 1.4);
-                    }
-                }
-
+                // ── MÃO E PUNHO: naturalmente retos e alinhados com o antebraço ──
+                // O antebraço já realiza o movimento principal. O punho tem apenas um suave amortecimento (sem entortar)
+                const subtleWaveZ = THREE.MathUtils.clamp(smoothWave * 0.18, -0.18, 0.18);
                 this.applyHandPose(
                     parts.leftHand,
-                    this.smooth('screenRightHandFlex', handFlex, 0.35),
-                    this.smooth('screenRightHandTwist', handTwist, 0.35),
-                    this.smooth('screenRightHandWave', handWave, 0.35)
+                    0,
+                    0,
+                    this.smooth('screenRightHandWave', subtleWaveZ, 0.35)
                 );
             }
         }
