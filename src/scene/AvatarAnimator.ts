@@ -34,8 +34,8 @@ const ANGLE_LIMITS = {
     HEAD_PITCH_MAX:   0.20, // Máx ~11° cima/baixo
 
     // Braço Superior / Ombro (Upper Arm)
-    ARM_PITCH_UP:    -2.00, // Braço erguido para pular/comemorar (~115°)
-    ARM_PITCH_BACK:   0.80, // Braço para trás no balanço (~45°)
+    ARM_PITCH_UP:     2.00, // Braço erguido para pular/comemorar (~115°)
+    ARM_PITCH_BACK:  -0.80, // Braço para trás no balanço (~45°)
     ARM_SPREAD_MIN:   0.08, // Junto ao tronco
     ARM_SPREAD_MAX:   0.85, // Máx ~48° aberto para fora
 
@@ -126,20 +126,20 @@ export class AvatarAnimator {
 
         // Braços confortavelmente relaxados com leve flexão de cotovelo
         const armSway = Math.sin(this.time * 1.2) * 0.03;
-        this.applyBonePose(parts.leftUpperArm, 0.12 + armSway, 0.05, 0);
-        this.applyBonePose(parts.rightUpperArm, 0.12 - armSway, -0.05, 0);
-        this.applyForearmPose(parts.leftForearm, -0.45, 0);
-        this.applyForearmPose(parts.rightForearm, -0.45, 0);
+        this.applyBonePose(parts.leftUpperArm, -0.08 + armSway, 0.05, 0);
+        this.applyBonePose(parts.rightUpperArm, -0.08 - armSway, -0.05, 0);
+        this.applyForearmPose(parts.leftForearm, -0.35, 0);
+        this.applyForearmPose(parts.rightForearm, -0.35, 0);
 
         // Mãos relaxadas em postura natural
         this.applyHandPose(parts.leftHand, 0.1, 0, 0.05);
         this.applyHandPose(parts.rightHand, 0.1, 0, -0.05);
 
-        // Base atlética
-        this.applyBonePose(parts.leftThigh, -0.04, 0, 0);
-        this.applyBonePose(parts.rightThigh, 0.04, 0, 0);
-        this.applyBonePose(parts.leftShin, -0.06, 0, 0);
-        this.applyBonePose(parts.rightShin, -0.06, 0, 0);
+        // Base atlética com leve flexão de joelho natural (positivo = flexão anatômica para trás)
+        this.applyBonePose(parts.leftThigh, 0.02, 0, 0);
+        this.applyBonePose(parts.rightThigh, -0.02, 0, 0);
+        this.applyBonePose(parts.leftShin, 0.05, 0, 0);
+        this.applyBonePose(parts.rightShin, 0.05, 0, 0);
     }
 
     private animateAthleticRun(parts: AvatarParts, speed: number, dt: number): void {
@@ -155,52 +155,61 @@ export class AvatarAnimator {
         this.applyBonePose(parts.torso, lean, 0, torsoSway);
         this.applyBonePose(parts.head, -lean * 0.6, 0, -torsoSway);
 
-        // Pernas em ciclo de passadas alternadas
+        // Pernas em ciclo de passadas alternadas:
+        // No Ready Player Me, ângulo negativo na coxa projeta a perna para a FRENTE (+Z)
+        // e ângulo positivo projeta a perna para TRÁS (-Z).
         const leftCycle = Math.sin(phase);
         const rightCycle = Math.sin(phase + Math.PI);
-        this.applyBonePose(parts.leftThigh, leftCycle * legAmp, 0, 0);
-        this.applyBonePose(parts.rightThigh, rightCycle * legAmp, 0, 0);
+        this.applyBonePose(parts.leftThigh, -leftCycle * legAmp, 0, 0);
+        this.applyBonePose(parts.rightThigh, -rightCycle * legAmp, 0, 0);
 
-        // Joelhos flexionando no recuo
-        const leftKneeBend = -Math.max(0, -Math.sin(phase - 0.4) * legAmp * 1.5);
-        const rightKneeBend = -Math.max(0, -Math.sin(phase + Math.PI - 0.4) * legAmp * 1.5);
+        // Joelhos: flexão anatômica para trás (ângulo POSITIVO dobra a canela para trás, -Z).
+        // Trava anatômica: canela NUNCA dobra para frente (mínimo 0).
+        const leftKneeBend = Math.max(0, Math.sin(phase - 0.5) * legAmp * 1.8);
+        const rightKneeBend = Math.max(0, Math.sin(phase + Math.PI - 0.5) * legAmp * 1.8);
         this.applyBonePose(parts.leftShin, leftKneeBend, 0, 0);
         this.applyBonePose(parts.rightShin, rightKneeBend, 0, 0);
 
         // Pés no impulso
-        this.applyBonePose(parts.leftFoot, Math.sin(phase) * 0.25, 0, 0);
-        this.applyBonePose(parts.rightFoot, Math.sin(phase + Math.PI) * 0.25, 0, 0);
+        this.applyBonePose(parts.leftFoot, -Math.sin(phase) * 0.25, 0, 0);
+        this.applyBonePose(parts.rightFoot, -Math.sin(phase + Math.PI) * 0.25, 0, 0);
 
-        // Braços em oposição cruzada de velocista
-        this.applyBonePose(parts.leftUpperArm, leftCycle * armAmp, 0.08, 0);
-        this.applyBonePose(parts.rightUpperArm, rightCycle * armAmp, -0.08, 0);
-        this.applyForearmPose(parts.leftForearm, -0.85 + Math.sin(phase) * 0.2, 0);
-        this.applyForearmPose(parts.rightForearm, -0.85 + Math.sin(phase + Math.PI) * 0.2, 0);
+        // Braços em oposição contralateral de velocista:
+        // Quando a coxa esquerda avança para a frente (leftThigh < 0), o braço esquerdo vai para trás (upperArm < 0)
+        // e o braço direito avança para a frente (upperArm > 0).
+        this.applyBonePose(parts.leftUpperArm, -leftCycle * armAmp, 0.08, 0);
+        this.applyBonePose(parts.rightUpperArm, -rightCycle * armAmp, -0.08, 0);
+        this.applyForearmPose(parts.leftForearm, -0.85 + Math.sin(phase) * 0.25, 0);
+        this.applyForearmPose(parts.rightForearm, -0.85 + Math.sin(phase + Math.PI) * 0.25, 0);
 
         // Mãos atléticas com leve oscilação no ritmo da corrida
-        this.applyHandPose(parts.leftHand, 0.2 + Math.sin(phase) * 0.15, 0, 0);
-        this.applyHandPose(parts.rightHand, 0.2 + Math.sin(phase + Math.PI) * 0.15, 0, 0);
+        this.applyHandPose(parts.leftHand, 0.15 + Math.sin(phase) * 0.1, 0, 0);
+        this.applyHandPose(parts.rightHand, 0.15 + Math.sin(phase + Math.PI) * 0.1, 0, 0);
     }
 
     private animateAthleticJump(parts: AvatarParts, progress: number): void {
         const p = Math.sin(progress * Math.PI);
 
-        // Transposição de barreira (110m com barreiras)
+        // Transposição de barreira olímpica (110m com barreiras)
+        // Tronco inclinado para a frente sobre a barreira
         this.applyBonePose(parts.torso, 0.38 * p, 0, 0);
-        this.applyBonePose(parts.head, -0.25 * p, 0, 0);
+        this.applyBonePose(parts.head, -0.20 * p, 0, 0);
 
-        // Perna de ataque esticada sobre a barreira
-        this.applyBonePose(parts.rightThigh, 1.25 * p, 0, 0);
-        this.applyBonePose(parts.rightShin, -0.15 * p, 0, 0);
+        // Perna de ataque (Lead leg): esticada para a FRENTE (+Z) sobre a barreira
+        // Ângulo negativo na coxa projeta a perna para a FRENTE (+Z).
+        this.applyBonePose(parts.rightThigh, -1.25 * p, 0, 0);
+        // Joelho da perna de ataque quase reto com leve amortecimento (positivo)
+        this.applyBonePose(parts.rightShin, 0.15 * p, 0, 0);
         this.applyBonePose(parts.rightFoot, 0.2 * p, 0, 0);
 
-        // Perna de reboque dobrada rente à barreira
-        this.applyBonePose(parts.leftThigh, -0.35 * p, -0.3 * p, -0.55 * p);
-        this.applyBonePose(parts.leftShin, -1.35 * p, 0, 0);
+        // Perna de reboque (Trail leg): dobrada rente à barreira com joelho aberto lateralmente
+        this.applyBonePose(parts.leftThigh, 0.35 * p, -0.3 * p, -0.55 * p);
+        // Canela da perna de reboque dobrada para trás (ângulo POSITIVO dobra para trás)
+        this.applyBonePose(parts.leftShin, 1.35 * p, 0, 0);
 
         // Braços para equilíbrio dinâmico no ar
-        this.applyBonePose(parts.leftUpperArm, -1.2 * p, 0.25 * p, 0);
-        this.applyBonePose(parts.rightUpperArm, 0.65 * p, -0.25 * p, 0);
+        this.applyBonePose(parts.leftUpperArm, 1.2 * p, 0.25 * p, 0);
+        this.applyBonePose(parts.rightUpperArm, -0.65 * p, -0.25 * p, 0);
         this.applyForearmPose(parts.leftForearm, -0.6 * p, 0);
         this.applyForearmPose(parts.rightForearm, -0.8 * p, 0);
     }
@@ -209,21 +218,24 @@ export class AvatarAnimator {
         const p = Math.sin(progress * Math.PI);
         const wobble = Math.sin(progress * Math.PI * 4) * 0.3;
         this.applyBonePose(parts.torso, 0.45 * p, wobble, 0);
-        this.applyBonePose(parts.leftUpperArm, 0.9 * p, -0.4, 0);
-        this.applyBonePose(parts.rightUpperArm, 0.9 * p, 0.4, 0);
-        this.applyBonePose(parts.leftThigh, wobble * 0.4, 0, 0);
-        this.applyBonePose(parts.rightThigh, -wobble * 0.4, 0, 0);
+        this.applyBonePose(parts.leftUpperArm, -0.8 * p, -0.3, 0);
+        this.applyBonePose(parts.rightUpperArm, -0.8 * p, 0.3, 0);
+        this.applyBonePose(parts.leftThigh, wobble * 0.3, 0, 0);
+        this.applyBonePose(parts.rightThigh, -wobble * 0.3, 0, 0);
     }
 
     private animateAthleticCelebrate(parts: AvatarParts, progress: number): void {
         const hop = Math.sin(this.time * 6.5);
-        this.applyBonePose(parts.torso, -0.1, hop * 0.08, 0);
-        this.applyBonePose(parts.leftUpperArm, -1.85 + hop * 0.15, 0.35, 0);
-        this.applyBonePose(parts.rightUpperArm, -1.85 + hop * 0.15, -0.35, 0);
-        this.applyForearmPose(parts.leftForearm, -0.7, hop * 0.25);
-        this.applyForearmPose(parts.rightForearm, -0.7, -hop * 0.25);
-        this.applyBonePose(parts.leftThigh, Math.sin(this.time * 6.5) * 0.3, 0, 0);
-        this.applyBonePose(parts.rightThigh, -Math.sin(this.time * 6.5) * 0.3, 0, 0);
+        this.applyBonePose(parts.torso, -0.05, hop * 0.08, 0);
+        // Braços erguidos no alto em V comemorando a vitória (ângulo POSITIVO ergue os braços!)
+        this.applyBonePose(parts.leftUpperArm, 1.85 + hop * 0.15, 0.35, 0);
+        this.applyBonePose(parts.rightUpperArm, 1.85 + hop * 0.15, -0.35, 0);
+        this.applyForearmPose(parts.leftForearm, -0.5, hop * 0.25);
+        this.applyForearmPose(parts.rightForearm, -0.5, -hop * 0.25);
+        this.applyHandPose(parts.leftHand, 0.2, 0, 0);
+        this.applyHandPose(parts.rightHand, 0.2, 0, 0);
+        this.applyBonePose(parts.leftThigh, -Math.sin(this.time * 6.5) * 0.25, 0, 0);
+        this.applyBonePose(parts.rightThigh, Math.sin(this.time * 6.5) * 0.25, 0, 0);
     }
 
     /**
@@ -307,15 +319,15 @@ export class AvatarAnimator {
             const shoulderAngle = angleBetween(rs, ls);
             const rawTiltZ = -(shoulderAngle + Math.PI / 2) * 0.4;
             const clampedTiltZ = THREE.MathUtils.clamp(rawTiltZ, -ANGLE_LIMITS.TORSO_ROLL_MAX, ANGLE_LIMITS.TORSO_ROLL_MAX);
-            parts.torso.rotation.z = this.smooth('torsoZ', clampedTiltZ);
 
+            let clampedTorsoX = 0;
             if (lh && rh && vis(LM.L_HIP) > 0.2 && vis(LM.R_HIP) > 0.2) {
                 const shoulderMidY = (ls.y + rs.y) / 2;
                 const hipMidY = (lh.y + rh.y) / 2;
                 const rawTorsoX = (shoulderMidY - hipMidY) * 2.0;
-                const clampedTorsoX = THREE.MathUtils.clamp(rawTorsoX, ANGLE_LIMITS.TORSO_PITCH_MIN, ANGLE_LIMITS.TORSO_PITCH_MAX);
-                parts.torso.rotation.x = this.smooth('torsoX', clampedTorsoX);
+                clampedTorsoX = THREE.MathUtils.clamp(rawTorsoX, ANGLE_LIMITS.TORSO_PITCH_MIN, ANGLE_LIMITS.TORSO_PITCH_MAX);
             }
+            this.applyBonePose(parts.torso, this.smooth('torsoX', clampedTorsoX), 0, this.smooth('torsoZ', clampedTiltZ));
         }
 
         const nose = pt(LM.NOSE);
@@ -323,20 +335,22 @@ export class AvatarAnimator {
             const shoulderCenterX = (ls.x + rs.x) / 2;
             const rawHeadYaw = (nose.x - shoulderCenterX) * -3.0;
             const clampedHeadYaw = THREE.MathUtils.clamp(rawHeadYaw, -ANGLE_LIMITS.HEAD_YAW_MAX, ANGLE_LIMITS.HEAD_YAW_MAX);
-            parts.head.rotation.y = this.smooth('headY', clampedHeadYaw);
+            this.applyBonePose(parts.head, 0, this.smooth('headY', clampedHeadYaw), 0);
         }
 
         // ── BRAÇO ESQUERDO DO JOGADOR → BRAÇO NA ESQUERDA DA TELA (parts.rightUpperArm) ──
         const le = pt(LM.L_ELBOW), lw = pt(LM.L_WRIST);
         const isLeftWristVis = lw && vis(LM.L_WRIST) > 0.25;
-        const isLeftArmActive = ls && isLeftWristVis && (lw.y < ls.y + 0.12 || Math.abs(lw.x - ls.x) > 0.22);
+        const armThresholdY = mode === 'run' ? ls.y - 0.04 : ls.y + 0.15;
+        const isLeftArmActive = ls && isLeftWristVis && (lw.y < armThresholdY || Math.abs(lw.x - ls.x) > 0.22);
 
         if (ls && le && vis(LM.L_SHOULDER) > 0.25 && vis(LM.L_ELBOW) > 0.25 && (isLeftArmActive || !parts.isGLTF)) {
             const targetY = isLeftWristVis ? lw.y : le.y;
             const elevation = (ls.y - targetY);
 
-            const rawArmElevationX = -elevation * 3.8;
-            const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
+            // Elevação do braço (positivo = braço erguido)
+            const rawArmElevationX = elevation * 3.8;
+            const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_BACK, ANGLE_LIMITS.ARM_PITCH_UP);
             const spreadDistance = Math.abs((isLeftWristVis ? lw.x : le.x) - ls.x);
             const clampedArmSpreadZ = THREE.MathUtils.clamp(spreadDistance * 2.8, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
@@ -397,14 +411,16 @@ export class AvatarAnimator {
         // ── BRAÇO DIREITO DO JOGADOR → BRAÇO NA DIREITA DA TELA (parts.leftUpperArm) ──
         const re = pt(LM.R_ELBOW), rw = pt(LM.R_WRIST);
         const isRightWristVis = rw && vis(LM.R_WRIST) > 0.25;
-        const isRightArmActive = rs && isRightWristVis && (rw.y < rs.y + 0.12 || Math.abs(rw.x - rs.x) > 0.22);
+        const armThresholdRY = mode === 'run' ? rs.y - 0.04 : rs.y + 0.15;
+        const isRightArmActive = rs && isRightWristVis && (rw.y < armThresholdRY || Math.abs(rw.x - rs.x) > 0.22);
 
         if (rs && re && vis(LM.R_SHOULDER) > 0.25 && vis(LM.R_ELBOW) > 0.25 && (isRightArmActive || !parts.isGLTF)) {
             const targetY = isRightWristVis ? rw.y : re.y;
             const elevation = (rs.y - targetY);
 
-            const rawArmElevationX = -elevation * 3.8;
-            const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_UP, ANGLE_LIMITS.ARM_PITCH_BACK);
+            // Elevação do braço (positivo = braço erguido)
+            const rawArmElevationX = elevation * 3.8;
+            const clampedArmElevationX = THREE.MathUtils.clamp(rawArmElevationX, ANGLE_LIMITS.ARM_PITCH_BACK, ANGLE_LIMITS.ARM_PITCH_UP);
             const spreadDistance = Math.abs((isRightWristVis ? rw.x : re.x) - rs.x);
             const clampedArmSpreadZ = -THREE.MathUtils.clamp(spreadDistance * 2.8, ANGLE_LIMITS.ARM_SPREAD_MIN, ANGLE_LIMITS.ARM_SPREAD_MAX);
 
